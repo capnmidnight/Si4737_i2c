@@ -126,7 +126,7 @@ void loop()
         numDigits = strlen(collectedDigits);
         //Silently ignore empty lines, this also gives us CR & LF support
         if(numDigits) {
-          if(numDigits % 2){    
+          if(numDigits % 2 == 0){    
             memset(command, 0x00, 8);
             for(int i = 0; i < (numDigits / 2) ; i++) {
               strncpy(&oneHexValue[2], &collectedDigits[i * 2], 2);
