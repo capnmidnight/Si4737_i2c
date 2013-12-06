@@ -59,10 +59,10 @@
 #include <Wire.h>
 
 //Add the Si4735 Library to the sketch
-#include <Si4735.h>
+#include <Si4737_i2c.h>
 
 //Create an instance of the Si4735 named radio.
-Si4735 radio;
+Si4737 radio;
 //Other variables we will use below
 byte response[16], status, command[8], numDigits;
 char collectedDigits[17] = "", currentDigit, oneHexValue[5] = "0x";

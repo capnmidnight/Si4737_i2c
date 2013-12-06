@@ -161,3 +161,49 @@ byte Si4737::getStatus(void){
 
   return response;
 }
+
+void Si4737::setMode(byte mode, bool powerdown, bool xosc){
+    if(powerdown) exit(false);
+    _mode = mode;
+
+    switch(_mode){
+        case SI4735_MODE_FM:
+            sendCommand(SI4735_CMD_POWER_UP,
+                        ((_pinGPO2 == SI4735_PIN_GPO2_HW) ? 0x00 :
+                         SI4735_FLG_GPO2IEN) |
+                        (xosc ? SI4735_FLG_XOSCEN : 0x00) | SI4735_FUNC_FM,
+                        SI4735_OUT_ANALOG);
+            break;
+        case SI4735_MODE_AM:
+            sendCommand(SI4735_CMD_POWER_UP,
+                        ((_pinGPO2 == SI4735_PIN_GPO2_HW) ? 0x00 :
+                         SI4735_FLG_GPO2IEN) |
+                        (xosc ? SI4735_FLG_XOSCEN : 0x00) | SI4735_FUNC_AM,
+                        SI4735_OUT_ANALOG);
+            break;
+		case SI4735_MODE_WB: //Yes, the variable is wrong. Eventually I'll switch everything over to SI4737
+            // Placeholder. Nothing happens
+            break;
+    }
+
+    //Configure GPO lines to maximize stability (see datasheet for discussion)
+    //No need to do anything for GPO1 if using SPI
+    //No need to do anything for GPO2 if using interrupts
+    sendCommand(SI4735_CMD_GPIO_CTL, (_i2caddr ? SI4735_FLG_GPO1OEN : 0x00) |
+                                     ((_pinGPO2 == SI4735_PIN_GPO2_HW) ?
+                                     SI4735_FLG_GPO2OEN : 0x00));
+    //Set GPO2 high if using interrupts as Si4735 has a LOW active INT line
+    if(_pinGPO2 != SI4735_PIN_GPO2_HW)
+      sendCommand(SI4735_CMD_GPIO_SET, SI4735_FLG_GPO2LEVEL);
+
+    //Disable Mute
+    unMute();
+
+    //Enable end-of-seek and RDS interrupts, if we're actually using interrupts
+    //TODO: write interrupt handlers for STCINT and RDSINT
+    if(_pinGPO2 != SI4735_PIN_GPO2_HW)
+      setProperty(
+          SI4735_PROP_GPO_IEN,
+          word(0x00, ((_mode == SI4735_MODE_FM) ? SI4735_FLG_RDSIEN : 0x00) |
+                     SI4735_FLG_STCIEN));
+}

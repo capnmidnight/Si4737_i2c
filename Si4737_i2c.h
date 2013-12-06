@@ -42,11 +42,10 @@
 #define SI4735_PIN_SEN_HWL 0xFE
 
 //List of possible modes for the Si4735 Radio
-#define SI4735_MODE_LW 0
+#define SI4735_MODE_NONE 0
 #define SI4735_MODE_AM 1
-#define SI4735_MODE_SW 2
-#define SI4735_MODE_FM 3
-#define SI4735_MODE_NONE 4
+#define SI4735_MODE_FM 2
+#define SI4735_MODE_WB 0
 
 //Define the Locale options
 #define SI4735_LOCALE_US 0
@@ -450,6 +449,51 @@ class Si4737
         *              the radio to be stored in.
         */
         void getResponse(byte* response);
+		
+		/*
+        * Description:
+        *   Sets a property value, see the SI4735_PROP_* constants and the
+        *   Si4735 Datasheet for more information.
+        */
+        void setProperty(word property, word value);
+		
+		/*
+        * Description:
+        *   Sets the Mode of the radio.
+        * Parameters:
+        *   mode      - the new mode of operation (see SI4735_MODE_*).
+        *   powerdown - power the chip down first, as required by datasheet.
+        *   xosc      - an external 32768Hz oscillator is present.
+        */
+        void setMode(byte mode, bool powerdown = true,
+                     bool xosc = true);
+		
+		/*
+        * Description:
+        *   Unmutes the audio output.
+        * Parameters:
+        *   minvol - set the volume to minimum value before unmuting if true,
+        *            otherwise leave it untouched causing the chip to blast
+        *            audio out at whatever the previous volume level was.
+        */
+        void unMute(bool minvol = false);
+		
+		/*
+        * Description:
+        *   Retrieves the Received Signal Quality metrics using a
+        *   Si4735_RX_Metrics struct.
+        */
+        void getRSQ(Si4737_RX_Metrics* RSQ);
+
+        /*
+        * Description:
+        *   Sets the volume. Valid values are [0-63].
+        */
+        void setVolume(byte value) {
+            setProperty(SI4735_PROP_RX_VOLUME,
+                        word(0x00, constrain(value, 0, 63)));
+        };
+
 						 
 						 
 	private:
