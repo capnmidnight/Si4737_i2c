@@ -157,7 +157,6 @@ void loop()
 				Serial.print(frequency / double(100));
 				Serial.println(F(" MHz FM"));
 				break;
-				break;
 			case SI4735_MODE_AM: 
 				Serial.print(frequency);
 				Serial.print(" kHz AM");
