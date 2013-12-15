@@ -154,19 +154,17 @@ void loop()
 			Serial.print(F("Currently tuned to "));
 			switch(mode) {
 			case SI4735_MODE_FM: 
-				Serial.print(frequency / 100);
-				Serial.print(".");
-				Serial.print(frequency % 100);
-				Serial.println(F("MHz FM"));
+				Serial.print(frequency / double(100));
+				Serial.println(F(" MHz FM"));
 				break;
 				break;
 			case SI4735_MODE_AM: 
 				Serial.print(frequency);
-				Serial.print("kHz AM");
+				Serial.print(" kHz AM");
 				break;
 			case SI4735_MODE_WB: 
-				Serial.print(frequency * 4000);
-				Serial.print("MHz WB");
+				Serial.print(frequency / double(400));
+				Serial.print(" MHz WB");
 				break;
 			}
 			if(goodtune) Serial.println(F("* Valid tune"));
