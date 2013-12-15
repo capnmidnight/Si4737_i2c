@@ -1,7 +1,7 @@
 /*
 	HOW TO USE
 
-	Go to 99.9 FM: "9910g"
+	Go to 99.9 FM: "9990g"
 	Switch to WB: "3m"
 	Go to 162.400 MHz for WB: "162400g"
 	Send command 0x11: "c11w"
@@ -81,7 +81,7 @@ void loop()
 				radio.setMode(SI4735_MODE_AM);
 			} else if (atoi(collectedDigits)==3){
 				Serial.println("Go to WB");
-				radio.setMode(SI4735_MODE_WB);
+				radio.setMode(SI4735_MODE_WB); //SI4735 does not have WB. This variable name is wrong.
 			} else{
 				Serial.println("Mode Not Recognized ");
 				Serial.println(atoi(collectedDigits));

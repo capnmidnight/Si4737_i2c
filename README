@@ -1,0 +1,60 @@
+Arduino Si4735 (and family) Library
+
+Written by Ryan Owens for SparkFun Electronics on 5/17/2011
+Altered by Wagner Sartori Junior <wsartori@gmail.com> on 9/13/2011
+Actively being developed by Jon Carrier <jjcarrier@gmail.com>
+Refactoring, cosmetic changes and I2C mode by Radu - Eosif Mihailescu <radu.mihailescu@linux360.ro> 3/29/2012
+Painstaking hardware testing by Todd Scott Canaday <tcanaday@memphis.edu> 4/03/2012
+I2C bug fixes pointed out by Ray Dees 4/03/2012
+Bug spotting in begin() -> setMode() interaction by Albert Tejera 5/24/2012
+
+This library is intended for use with the SparkFun Si4735 Shield or Breakout
+Board, however it should work with most Si47xx chips that share the same command
+language. At the time of this writing, the list includes: Si4700->Si4713,
+Si4720, Si4721, Si4730, Si4731, Si4734->Si4749, Si4784 and Si4785.
+
+Originally released under the 'Buy Me a Beer' license (if we ever meet, you
+buy me a beer).
+
+To the furthest extent that this is legally possible, the fork maintained by
+Radu - Eosif Mihailescu and published here https://github.com/csdexter/Si4735
+is hereby released under the LGPL version 3.
+To the furthest extent that this is legally enforceable, the copyright remains
+with the authors listed above.
+
+See the example sketches to learn how to use the library in your code.
+
+HARDWARE NOTES:
+ * The Si4735 is a 3.3V I/O chip whereas the Arduino Uno/Mega are 5V I/O. This
+   means you will need to use logic level shifters if you are trying to use
+   the Breakout Board version with the latter.
+   If you're using the Shield, you should be ok save for a few fatal design
+   mistakes SparkFun introduced. There are various hacks around to work around
+   those, my personal recommendation is that you go for a real level shifter.
+   Please note that BOB-08745 is cheaper than BOB-10403 mainly because it's a
+   lot slower. For casual applications speed shouldn't matter, but if you need
+   to push the SPI interface to its limit, go for the expensive version if you
+   need to translate between a 5V I/O Arduino and the Si4735.
+ * If you're using the Breakout Board, make sure you tell the code whether or
+   not you connected a 32768Hz oscillator to the RCLK and DCLK pins. See the
+   schematic for the Shield for reference.
+ * Quick connection reference:
+   SPI Mode, Si4735 -> Arduino:
+     SDIO      -> MOSI    (Arduino output)
+     GPO1      -> MISO    (Arduino input)
+     SCLK      -> SCK     (Arduino output)
+     #SEN      -> SS      (Arduino output)
+     #RESET    -> D9      (Arduino output)
+     GPO2/#INT -> D2/INT0 (Arduino bidirectional)
+   I2C Mode, Si4735 -> Arduino:
+     SDIO      -> SDA     (Arduino bidirectional)
+     SCLK      -> SCL     (Arduino output)
+     #SEN      -> tied high or low, tell the code which one with
+                  SI4735_PIN_SEN_HW*
+     #RESET    -> D9      (Arduino output)
+     GPO1      -> left floating
+     GPO2/#INT -> D2/INT0 (Arduino input)
+                  or (left floating or tied high, if not using interrupts)
+
+For general questions and updates on this library please contact the fork
+maintainer at <radu.mihailescu@linux360.ro>.

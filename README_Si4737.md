@@ -5,7 +5,7 @@ This code is for the Si4737 breakout board made by [Alex_K](http://forum.arduino
 
 I could not get the Si4735 library to work with my board, so I figured I'd start from blank. Anything and everything concerning SPI has been removed. An example is available. 
 
-## HARDWARE NOTES:
+=== Hardware Notes ===
  * Quick connection reference:
    I2C Mode, Si4735 -> Arduino:
      SDIO      -> SDA     (Arduino bidirectional)
