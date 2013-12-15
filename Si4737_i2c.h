@@ -1,11 +1,11 @@
 /* UWAFT Si4737 
 
-  Adopted from:
-	Arduino Si4735 (and family) Library
- * See the README file for author and licensing information. In case it's
- * missing from your distribution, use the one here as the authoritative
- * version: https://github.com/csdexter/Si4735/blob/master/README
- */
+Adopted from:
+Arduino Si4735 (and family) Library
+* See the README file for author and licensing information. In case it's
+* missing from your distribution, use the one here as the authoritative
+* version: https://github.com/csdexter/Si4735/blob/master/README
+*/
 
 #ifndef Si4737_i2c_h
 #define Si4737_i2c_h
@@ -45,7 +45,7 @@
 #define SI4735_MODE_NONE 0
 #define SI4735_MODE_AM 1
 #define SI4735_MODE_FM 2
-#define SI4735_MODE_WB 0
+#define SI4735_MODE_WB 3
 
 //Define the Locale options
 #define SI4735_LOCALE_US 0
@@ -158,7 +158,7 @@
 //Define Si4735 Function modes
 #define SI4735_FUNC_FM 0x00
 #define SI4735_FUNC_AM 0x01
-#define SI4735_FUNC_VER 0x0F
+#define SI4735_FUNC_WB 0xC3 //RIC The name should be 4737
 
 //Define Si4735 Output modes
 #define SI4735_OUT_RDS 0x00 // RDS only
@@ -333,12 +333,12 @@
 //This holds the current station reception metrics as given by the chip. See
 //the Si4735 datasheet for a detailed explanation of each member.
 typedef struct {
-    byte STBLEND;
-    bool PILOT;
-    byte RSSI;
-    byte SNR;
-    byte MULT;
-    signed char FREQOFF;
+	byte STBLEND;
+	bool PILOT;
+	byte RSSI;
+	byte SNR;
+	byte MULT;
+	signed char FREQOFF;
 } Si4737_RX_Metrics;
 
 //This holds time of day as received via RDS. Mimicking struct tm from
@@ -349,178 +349,249 @@ typedef struct {
 //NOTE: RDS does not provide DST information so we don't provide tm_isdst
 //NOTE: we will provide tm_wday (day of week) but not tm_yday (day of year)
 typedef struct {
-    byte tm_min;
-    byte tm_hour;
-    byte tm_mday;
-    byte tm_mon;
-    word tm_year;
-    byte tm_wday;
+	byte tm_min;
+	byte tm_hour;
+	byte tm_mday;
+	byte tm_mon;
+	word tm_year;
+	byte tm_wday;
 }  Si4737_RDS_Time;
 
 typedef struct {
-    //PI is already taken :-(
-    word programIdentifier;
-    bool TP, TA, MS;
-    byte PTY, DICC;
-    char programService[9];
-    char programTypeName[9];
-    char radioText[65];
+	//PI is already taken :-(
+	word programIdentifier;
+	bool TP, TA, MS;
+	byte PTY, DICC;
+	char programService[9];
+	char programTypeName[9];
+	char radioText[65];
 } Si4737_RDS_Data;
 
 //BEWARE - CLASS IS CALLED Si4737!
 
 class Si4737
 {
-	public:
-        /*
-        * Description:
-        *   This the constructor. It assumes SparkFun Si4735 Shield + level
-        *   shifter (or the diode fix, or 3.3V-native Arduino) semantics if
-        *   called without parameters.
-        *   If you're not using the Shield (e.g. using the Breakout Board) or
-        *   have wired the Si4735 differently, then explicitly supply the
-        *   constructor with the actual pin numbers.
-        *   Use the hardwired pins constants above to tell the constructor you
-        *   haven't used (and hardwired) some of the pins.
-        * Parameters:
-        *   interface - interface and protocol used to talk to the chip
-        *   pin*      - pin numbers for connections to the Si4735, with
-        *               defaults for the SparkFun Si4735 Shield already
-        *               provided.
-        */
-        Si4737(byte interface = SI4735_INTERFACE_I2C,
-               byte pinPower = SI4735_PIN_POWER,
-               byte pinReset = SI4735_PIN_RESET,
-               byte pinGPO2 = SI4735_PIN_GPO2, byte pinSEN = SI4735_PIN_SEN);
+public:
+	/*
+	* Description:
+	*   This the constructor. It assumes SparkFun Si4735 Shield + level
+	*   shifter (or the diode fix, or 3.3V-native Arduino) semantics if
+	*   called without parameters.
+	*   If you're not using the Shield (e.g. using the Breakout Board) or
+	*   have wired the Si4735 differently, then explicitly supply the
+	*   constructor with the actual pin numbers.
+	*   Use the hardwired pins constants above to tell the constructor you
+	*   haven't used (and hardwired) some of the pins.
+	* Parameters:
+	*   interface - interface and protocol used to talk to the chip
+	*   pin*      - pin numbers for connections to the Si4735, with
+	*               defaults for the SparkFun Si4735 Shield already
+	*               provided.
+	*/
+	Si4737(byte interface = SI4735_INTERFACE_I2C,
+		byte pinPower = SI4735_PIN_POWER,
+		byte pinReset = SI4735_PIN_RESET,
+		byte pinGPO2 = SI4735_PIN_GPO2, byte pinSEN = SI4735_PIN_SEN);
 
-        /*
-        * Description:
-        *   This is the destructor, it shuts the Si4735 down
-        */
-        ~Si4737() { exit(true); };
-		
-	   /*
-        * Description:
-        *   Initializes the Si4735, powers up the radio in the desired mode
-        *   and limits the bandwidth appropriately.
-        *   This function must be called before any other radio command.
-        *   The band limits are set as follows:
-        *     AM - 520 to 1710 kHz
-        *     FM - 87.5 to 107.9 MHz
-		*	  WB - God knows
-        * Parameters:
-        *   mode        - The desired radio mode, one of the SI4735_MODE_*
-        *                 constants.
-        *   xosc        - A 32768Hz external oscillator is present.
-        *   slowshifter - A BOB-08745 is used for level shifting between an
-        *                 Uno/Mega and the Si4735. Use a 3.3V I/O Arduino or
-        *                 shift through a BOB-10403 to be able to go up to
-        *                 1MHz by setting this to false.
-        */
-        void begin(byte mode, bool xosc = true, bool slowshifter = true);
-		
-        /*
-        * Description:
-        *   Used to send a command and its arguments to the radio chip.
-        * Parameters:
-        *   command - the command byte, see datasheet and use one of the
-                      SI4735_CMD_* constants
-        *   arg1-7  - command arguments, see the Si4735 Programmers Guide.
-        */
-        void sendCommand(byte command, byte arg1 = 0, byte arg2 = 0,
-                         byte arg3 = 0, byte arg4 = 0, byte arg5 = 0,
-                         byte arg6 = 0, byte arg7 = 0);		
+	/*
+	* Description:
+	*   This is the destructor, it shuts the Si4735 down
+	*/
+	~Si4737() { end(true); };
 
-        /*
-        * Description:
-        *   Gets the current status (short read) of the radio. Learn more
-        *   about the status byte in the Si4735 Datasheet.
-        * Returns:
-        *   The status of the radio.
-        */
-        byte getStatus(void);       
+	/*
+	* Description:
+	*   Powers down the radio.
+	* Parameters:
+	*   hardoff - physically power down the chip if fed off a digital pin,
+	*             otherwise just send SI4735_CMD_POWER_DOWN.
+	*/
+	void end(bool hardoff = false);
 
-	   /*
-        * Description:
-        *   Gets the long response (long read) from the radio. Learn more
-        *   about the long response in the Si4735 Datasheet.
-        * Parameters:
-        *   response - A byte[] at least 16 bytes long for the response from
-        *              the radio to be stored in.
-        */
-        void getResponse(byte* response);
-		
-		/*
-        * Description:
-        *   Sets a property value, see the SI4735_PROP_* constants and the
-        *   Si4735 Datasheet for more information.
-        */
-        void setProperty(word property, word value);
-		
-		/*
-        * Description:
-        *   Sets the Mode of the radio.
-        * Parameters:
-        *   mode      - the new mode of operation (see SI4735_MODE_*).
-        *   powerdown - power the chip down first, as required by datasheet.
-        *   xosc      - an external 32768Hz oscillator is present.
-        */
-        void setMode(byte mode, bool powerdown = true,
-                     bool xosc = true);
-		
-		/*
-        * Description:
-        *   Unmutes the audio output.
-        * Parameters:
-        *   minvol - set the volume to minimum value before unmuting if true,
-        *            otherwise leave it untouched causing the chip to blast
-        *            audio out at whatever the previous volume level was.
-        */
-        void unMute(bool minvol = false);
-		
-		/*
-        * Description:
-        *   Retrieves the Received Signal Quality metrics using a
-        *   Si4735_RX_Metrics struct.
-        */
-        void getRSQ(Si4737_RX_Metrics* RSQ);
+	/*
+	* Description:
+	*   Initializes the Si4735, powers up the radio in the desired mode
+	*   and limits the bandwidth appropriately.
+	*   This function must be called before any other radio command.
+	*   The band limits are set as follows:
+	*     AM - 520 to 1710 kHz
+	*     FM - 87.5 to 107.9 MHz
+	*	  WB - God knows
+	* Parameters:
+	*   mode        - The desired radio mode, one of the SI4735_MODE_*
+	*                 constants.
+	*   xosc        - A 32768Hz external oscillator is present.
+	*   slowshifter - A BOB-08745 is used for level shifting between an
+	*                 Uno/Mega and the Si4735. Use a 3.3V I/O Arduino or
+	*                 shift through a BOB-10403 to be able to go up to
+	*                 1MHz by setting this to false.
+	*/
+	void begin(byte mode, bool xosc = true, bool slowshifter = true);
 
-        /*
-        * Description:
-        *   Sets the volume. Valid values are [0-63].
-        */
-        void setVolume(byte value) {
-            setProperty(SI4735_PROP_RX_VOLUME,
-                        word(0x00, constrain(value, 0, 63)));
-        };
+	/*
+	* Description:
+	*   Used to send a command and its arguments to the radio chip.
+	* Parameters:
+	*   command - the command byte, see datasheet and use one of the
+	SI4735_CMD_* constants
+	*   arg1-7  - command arguments, see the Si4735 Programmers Guide.
+	*/
+	void sendCommand(byte command, byte arg1 = 0, byte arg2 = 0,
+		byte arg3 = 0, byte arg4 = 0, byte arg5 = 0,
+		byte arg6 = 0, byte arg7 = 0);		
 
-						 
-						 
-	private:
-        byte _pinPower, _pinReset, _pinGPO2, _pinSDIO, _pinGPO1, _pinSCLK,
-             _pinSEN;
-        byte _mode, _response[16], _i2caddr;
-        bool _haverds;
-		
-		 /*
-        * Description:
-        *   Enables RDS reception.
-        */
-        void enableRDS(void);
+	/*
+	* Description:
+	*   Gets the current status (short read) of the radio. Learn more
+	*   about the status byte in the Si4735 Datasheet.
+	* Returns:
+	*   The status of the radio.
+	*/
+	byte getStatus(void);       
 
-        /*
-        * Description:
-        *   Waits for completion of various operations.
-        * Parameters:
-        *   which - interrupt flag to wait for, see SI4735_STATUS_*
-        */
-        void waitForInterrupt(byte which);
+	/*
+	* Description:
+	*   Gets the long response (long read) from the radio. Learn more
+	*   about the long response in the Si4735 Datasheet.
+	* Parameters:
+	*   response - A byte[] at least 16 bytes long for the response from
+	*              the radio to be stored in.
+	*/
+	void getResponse(byte* response);
 
-        /*
-        * Description:
-        *   Performs actions common to all tuning modes.
-        */
-        void completeTune(void);
+	/*
+	* Description:
+	*   Sets a property value, see the SI4735_PROP_* constants and the
+	*   Si4735 Datasheet for more information.
+	*/
+	void setProperty(word property, word value);
+
+	/*
+	* Description:
+	*   Sets the Mode of the radio.
+	* Parameters:
+	*   mode      - the new mode of operation (see SI4735_MODE_*).
+	*   powerdown - power the chip down first, as required by datasheet.
+	*   xosc      - an external 32768Hz oscillator is present.
+	*/
+	void setMode(byte mode, bool powerdown = true,
+		bool xosc = true);
+
+	/*
+	* Description:
+	*   Sets deemphasis time constant (see SI4735_FLG_DEEMPH_*).
+	*/
+	void setDeemphasis(byte deemph);
+
+	/*
+	* Description:
+	*   Gets the current mode of the radio (see SI4735_MODE_*).
+	*/
+	byte getMode(void) { return _mode; };
+
+	/*
+	* Description:
+	*   Unmutes the audio output.
+	* Parameters:
+	*   minvol - set the volume to minimum value before unmuting if true,
+	*            otherwise leave it untouched causing the chip to blast
+	*            audio out at whatever the previous volume level was.
+	*/
+	void unMute(bool minvol = false);
+
+	/*
+	* Description:
+	*   Retrieves the Received Signal Quality metrics using a
+	*   Si4735_RX_Metrics struct.
+	*/
+	void getRSQ(Si4737_RX_Metrics* RSQ);
+
+	/*
+	* Description:
+	*   Sets the volume. Valid values are [0-63].
+	*/
+	void setVolume(int value) {
+		setProperty(SI4735_PROP_RX_VOLUME,
+			word(0x00, constrain(value, 0, 63)));
+	};
+
+	/*
+	* Description:
+	*   Used to to tune the radio to a desired frequency. The library uses
+	*   the mode indicated via begin() to determine how to set the
+	*   frequency.
+	* Parameters:
+	*   frequency - The frequency to tune to
+	In kHz for AM
+	In 10kHz for FM and WB
+	*/
+	void setFrequency(long frequency);
+
+
+	/*
+	* Description:
+	*   Gets the frequency the chip is currently tuned to.
+	* Parameters:
+	*   valid - will be set to true if the chip currently detects a valid
+	*           (as defined by current Seek/Tune criteria, see
+	*           FM_SEEK_TUNE_* properties in the datasheet) signal on this
+	*           frequency. Omit if you don't care.
+	*/
+	word getFrequency(bool* valid = NULL);
+
+	/*
+	* Description:
+	*   Gets a property value, see the SI4735_PROP_* constants and the
+	*   Si4735 Datasheet for more information.
+	* Returns:
+	*   The current value of property.
+	*/
+	word getProperty(word property);
+
+	/*
+	* Description:
+	*   Commands the radio to seek up to the next valid channel. No seek for WB. 
+	* Parameters:
+	*   wrap - set to true to allow the seek to wrap around the current
+	*          band.
+	*/
+	void seekUp(bool wrap = true);
+
+	/*
+	* Description:
+	*   Commands the radio to seek down to the next valid channel. No seek for WB. 
+	* Parameters:
+	*   wrap - set to true to allow the seek to wrap around the current
+	*          band.
+	*/
+	void seekDown(bool wrap = true);
+
+
+private:
+	byte _pinPower, _pinReset, _pinGPO2, _pinSDIO, _pinGPO1, _pinSCLK,
+		_pinSEN;
+	byte _mode, _response[16], _i2caddr;
+	bool _haverds;
+
+	/*
+	* Description:
+	*   Enables RDS reception.
+	*/
+	void enableRDS(void);
+
+	/*
+	* Description:
+	*   Waits for completion of various operations.
+	* Parameters:
+	*   which - interrupt flag to wait for, see SI4735_STATUS_*
+	*/
+	void waitForInterrupt(byte which);
+
+	/*
+	* Description:
+	*   Performs actions common to all tuning modes.
+	*/
+	void completeTune(void);
 };
 
 #endif
