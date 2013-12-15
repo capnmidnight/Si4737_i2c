@@ -43,8 +43,8 @@ Arduino Si4735 (and family) Library
 
 //List of possible modes for the Si4735 Radio
 #define SI4735_MODE_NONE 0
-#define SI4735_MODE_AM 1
-#define SI4735_MODE_FM 2
+#define SI4735_MODE_FM 1
+#define SI4735_MODE_AM 2
 #define SI4735_MODE_WB 3
 
 //Define the Locale options
@@ -367,7 +367,114 @@ typedef struct {
 	char radioText[65];
 } Si4737_RDS_Data;
 
-//BEWARE - CLASS IS CALLED Si4737!
+//BEWARE - CLASSES ARE CALLED Si4737!
+
+class Si4737RDSDecoder
+{
+public:
+	/*
+	* Description:
+	*   Default constructor.
+	*/
+	Si4737RDSDecoder() { resetRDS(); }
+
+	/*
+	* Description:
+	*   Decodes one RDS block and updates internal data structures.
+	*/
+	void decodeRDSBlock(word block[]);
+
+	/*
+	* Description:
+	*   Returns currently decoded RDS data, filling a struct
+	*   Si4735_RDS_Data.
+	*/
+	void getRDSData(Si4737_RDS_Data* rdsdata);
+
+	/*
+	* Description:
+	*   Returns currently decoded RDS CT information filling a struct
+	*   Si4735_RDS_Time, if any is available, and returns true; otherwise
+	*   returns false and does not touch rdstime.
+	* Parameters:
+	*   rdstime - pointer to a struct Si4735_RDS_Time to be filled with
+	*             CT information, ignore if only interested in CT
+	*             availability and not actual value.
+	*/
+	bool getRDSTime(Si4737_RDS_Time* rdstime = NULL);
+
+	/*
+	* Description:
+	*   Resets internal data structures, use when switching to a new
+	*   station.
+	*/
+	void resetRDS(void);
+
+#if defined(SI4735_DEBUG)
+	/* Description:
+	*    Dumps RDS group type receipt statistics.
+	*/
+	void dumpRDSStats(void);
+#endif
+
+private:
+	Si4737_RDS_Data _status;
+	Si4737_RDS_Time _time;
+	bool _rdstextab, _rdsptynab, _havect;
+#if defined(SI4735_DEBUG)
+	word _rdsstats[32];
+#endif
+	/*
+	* Description:
+	*   Filters the string str in place to only contain printable
+	*   characters and also replaces 0x0D (CR) with 0x00 effectively
+	*   ending the string at that point as per RDBS ¡ì3.1.5.3.
+	*   Any unprintable character is converted to a question mark ("?"),
+	*   as is customary. This helps with filtering out noisy strings.
+	*/
+	void makePrintable(char* str);
+
+	/*
+	* Description:
+	*   Switches endianness of the given value around. Si4735 is a
+	*   big-endian machine while Arduino is little-endian --  a storm of
+	*   problems are headed our way if we ignore that.
+	* Parameters:
+	*   value - the word to be switched
+	*/
+	inline word switchEndian(word value) { return (value >> 8) | (value << 8); }
+};
+
+class Si4737Translate
+{
+public:
+	/*
+	* Description:
+	*   Translates the given PTY into human-readable text for the given
+	*   locale. At most textsize-1 characters will be copied to the buffer
+	*   at text.
+	*/
+	void getTextForPTY(byte PTY, byte locale, char* text, byte textsize);
+
+	/*
+	* Description:
+	*   Translates the given PTY between the given locales.
+	*/
+	byte translatePTY(byte PTY, byte fromlocale, byte tolocale);
+
+	/*
+	* Description:
+	*   Decodes the station callsign out of the PI using the method
+	*   defined in the RDBS standard for North America.
+	* Parameters:
+	*   programIdentifier - a word containing the Program Identifier value
+	*                       from RDS
+	*   callSign - pointer to a char[] at least 5 characters long that
+	*              receives the decoded station call sign
+	*/
+	void decodeCallSign(word programIdentifier, char* callSign);
+};
+
 
 class Si4737
 {
@@ -498,6 +605,23 @@ public:
 	*            audio out at whatever the previous volume level was.
 	*/
 	void unMute(bool minvol = false);
+
+	/*
+	* Description:
+	*   If in FM mode and the chip has received any RDS block, fetch it
+	*   off the chip and fill word block[4] with it, returning true;
+	*   otherwise return false without side-effects.
+	*   This function needs to be actively called (e.g. from loop()) in
+	*   order to see sensible information.
+	*/
+	bool readRDSBlock(word* block);
+
+	/*
+	* Description:
+	*   Returns true if at least one RDS group has been received while
+	*   tuned into the current station.
+	*/
+	bool isRDSCapable(void) { return _haverds; };
 
 	/*
 	* Description:
