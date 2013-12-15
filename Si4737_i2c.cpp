@@ -488,6 +488,19 @@ void Si4737::sendCommand(byte command, byte arg1, byte arg2, byte arg3,
 							 while(!(status & SI4735_STATUS_CTS));
 }
 
+bool Si4737::getRDSStat(){
+	//See if there's anything for us to do
+	if(!(_mode == SI4735_MODE_FM && (getStatus() & SI4735_STATUS_RDSINT)))
+		_haverds = false;
+
+	else
+	{
+		_haverds = true;
+	}
+
+	return _haverds;
+}
+
 bool Si4737::readRDSBlock(word* block){
 	//See if there's anything for us to do
 	if(!(_mode == SI4735_MODE_FM && (getStatus() & SI4735_STATUS_RDSINT)))
@@ -576,9 +589,17 @@ byte Si4737::getStatus(void){
 	if(response > 0){
 		Serial.print(F("\nSi4735 STS 0x"));
 		Serial.print(response, HEX);
-		Serial.print(" [");
-		Serial.print(response, BIN);
-		Serial.println("]");
+		//Serial.print(" [");
+		//Serial.print(response, BIN);
+		//Serial.println("]");
+		//Trimming end of status byte
+		if((response / 128) & 1) Serial.print(" CTS");
+		if((response / 64) & 1) Serial.print(" ERR");
+		if((response / 8) & 1) Serial.print(" RSQ");
+		if((response / 4) & 1) Serial.print(" RDS");
+		if((response / 2) & 1) Serial.print(" ASQ");
+		if(response & 1) Serial.print(" STC");
+		Serial.print("\n\n");
 	}
 
 	return response;

@@ -621,7 +621,7 @@ public:
 	*   Returns true if at least one RDS group has been received while
 	*   tuned into the current station.
 	*/
-	bool isRDSCapable(void) { return _haverds; };
+	bool getRDSStat(void);
 
 	/*
 	* Description:
