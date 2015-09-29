@@ -1,9 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
+# Visual Studio 14
+VisualStudioVersion = 14.0.23107.0
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Si4737_i2c", "Si4737_i2c.vcxproj", "{DEEEAD67-BA49-4573-AAF0-CC3BEC84E002}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Radio_Test_Native_USB", "..\..\darrenFM\Radio_Test_Native_USB\Radio_Test_Native_USB.vcxproj", "{6C0382BF-D730-444C-9E5E-86699C592857}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BasicSi4737_I2CExample", "examples\BasicSi4737_I2CExample\BasicSi4737_I2CExample.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Si4737_Example", "examples\Si4737_Example\Si4737_Example.vcxproj", "{0B24DBBF-C159-4F94-A116-62EBF333FC45}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,10 +19,14 @@ Global
 		{DEEEAD67-BA49-4573-AAF0-CC3BEC84E002}.Debug|Win32.Build.0 = Debug|Win32
 		{DEEEAD67-BA49-4573-AAF0-CC3BEC84E002}.Release|Win32.ActiveCfg = Release|Win32
 		{DEEEAD67-BA49-4573-AAF0-CC3BEC84E002}.Release|Win32.Build.0 = Release|Win32
-		{6C0382BF-D730-444C-9E5E-86699C592857}.Debug|Win32.ActiveCfg = Debug|Win32
-		{6C0382BF-D730-444C-9E5E-86699C592857}.Debug|Win32.Build.0 = Debug|Win32
-		{6C0382BF-D730-444C-9E5E-86699C592857}.Release|Win32.ActiveCfg = Release|Win32
-		{6C0382BF-D730-444C-9E5E-86699C592857}.Release|Win32.Build.0 = Release|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|Win32.ActiveCfg = Debug|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|Win32.Build.0 = Debug|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|Win32.ActiveCfg = Release|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|Win32.Build.0 = Release|Win32
+		{0B24DBBF-C159-4F94-A116-62EBF333FC45}.Debug|Win32.ActiveCfg = Debug|Win32
+		{0B24DBBF-C159-4F94-A116-62EBF333FC45}.Debug|Win32.Build.0 = Debug|Win32
+		{0B24DBBF-C159-4F94-A116-62EBF333FC45}.Release|Win32.ActiveCfg = Release|Win32
+		{0B24DBBF-C159-4F94-A116-62EBF333FC45}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
