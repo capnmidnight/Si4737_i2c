@@ -404,9 +404,8 @@ void Si4737::begin(byte mode, bool xosc, bool slowshifter){
 
 	//Reset pinout config
 	pinMode(_pinReset, OUTPUT);
-	//pinMode((_i2caddr ? SCL : SCK), OUTPUT); Dont know what this does
-	delayMicroseconds(100);
 	digitalWrite(_pinReset, LOW); //Reset it and wait
+	delayMicroseconds(100);
 	
 	if(_pinPower != SI4737_PIN_POWER_HW) {
         pinMode(_pinPower, OUTPUT);
