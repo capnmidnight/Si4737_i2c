@@ -104,3 +104,10 @@ communicating over I2C to the SI4737 to demonstrate adherence to the programming
 manual (https://www.silabs.com/Support%20Documents/TechnicalDocs/AN332.pdf),
 and a more complete example that interfaces with some external hardware of a
 specific design.
+
+
+NOTE: if you're running on a 3.3v Arduino, you should double the baud rate at
+which you run the SoftSerial library, but do not double it in the Serial Monitor,
+because the lower voltage Arduino's only run at half the clock rate but doesn't
+know it, so the SoftSerial code assumes it's running at full speed, which screws
+up the timing.

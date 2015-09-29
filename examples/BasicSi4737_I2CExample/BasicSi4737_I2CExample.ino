@@ -14,8 +14,14 @@ Author:	Sean
 
 void setup()
 {
-    Serial.begin(115200 * 2);
     Wire.begin();
+
+    // NOTE: if you're running on a 3.3v Arduino, you should double the baud rate
+    // at which you run the SoftSerial library, but do not double it in the Serial
+    // Monitor, because the lower voltage Arduino's only run at half the clock
+    // rate but doesn't know it, so the SoftSerial code assumes it's running at full
+    // speed, which screws up the timing.
+    Serial.begin(115200 * 2);
     Serial.println();
     Serial.println();
 

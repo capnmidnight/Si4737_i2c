@@ -36,7 +36,13 @@ Si4737_RDS_Time rdstime;
 char FW[3], REV;
 
 void setup() {
+    // NOTE: if you're running on a 3.3v Arduino, you should double the baud rate
+    // at which you run the SoftSerial library, but do not double it in the Serial
+    // Monitor, because the lower voltage Arduino's only run at half the clock
+    // rate but doesn't know it, so the SoftSerial code assumes it's running at full
+    // speed, which screws up the timing.
     Serial.begin(115200*2);
+
     /*
     pinMode(mcuradio_rst, OUTPUT); // Set reset to output
     digitalWrite(mcuradio_rst, LOW); // Put device in reset mode and wait a little
