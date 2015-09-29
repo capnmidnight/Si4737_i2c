@@ -407,19 +407,16 @@ void Si4737::begin(byte mode, bool xosc, bool slowshifter){
 	//pinMode((_i2caddr ? SCL : SCK), OUTPUT); Dont know what this does
 	delayMicroseconds(100);
 	digitalWrite(_pinReset, LOW); //Reset it and wait
-	//Use the longest of delays given in the datasheet
-	delayMicroseconds(100);
-	/* No idea
+	
 	if(_pinPower != SI4737_PIN_POWER_HW) {
-	digitalWrite(_pinPower, HIGH);
-	//Datasheet calls for 250us between VIO and RESET
-	delayMicroseconds(250);
+        pinMode(_pinPower, OUTPUT);
+	    digitalWrite(_pinPower, HIGH);
+	    //Datasheet calls for 250us between VIO and RESET
+	    delayMicroseconds(250);
 	};
-	digitalWrite((_i2caddr ? SCL : SCK), LOW);
-	*/
-	//Datasheet calls for no rising SCLK edge 300ns before RESET rising edge,
-	//but Arduino can only go as low as 3us.
-	delayMicroseconds(5);
+    //Use the longest of delays given in the datasheet
+    delayMicroseconds(100);
+
 	digitalWrite(_pinReset, HIGH);
 	//Datasheet calls for 30ns from rising edge of RESET until GPO1/GPO2 bus
 	//mode selection completes, but Arduino can only go as low as 3us.

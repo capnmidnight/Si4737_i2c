@@ -38,7 +38,7 @@ void setup() {
     // speed, which screws up the timing.
     Serial.begin(115200*2);
 
-    radio.begin(SI4737_MODE_FM);
+    radio.begin(SI4737_MODE_FM, true, false);
     Serial.println("ino code - Radio Powered up, FM mode");
     delay(100);                          // Wait for Boot 
 
