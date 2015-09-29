@@ -12,6 +12,12 @@ Author:	Sean
 #define SI4737_PIN_SDIO A4
 #define SI4737_PIN_SCLK A5
 
+void prepareChip();
+bool translateI2CStatus(byte);
+bool translateChipStatus(byte);
+byte getChipStatus();
+byte sendCommand(byte, const byte*, int);
+
 void setup()
 {
     Wire.begin();
@@ -25,6 +31,84 @@ void setup()
     Serial.println();
     Serial.println();
 
+    prepareChip();
+
+    Serial.print("Writing POWER_UP command... ");
+    Wire.beginTransmission(SI4737_BUS_ADDRESS);
+    Wire.write(0x01); // POWER_UP
+    Wire.write(0xC0); // HIGH[XOSCEN], LOW[FM_RECV]
+    Wire.write(0x05); // ANALOG_OUT
+    byte status = Wire.endTransmission(false);
+
+    if (translateI2CStatus(status))
+    {
+        status = getChipStatus();
+        if (translateChipStatus(status)) 
+        {
+
+        }
+    }
+}
+
+byte getChipStatus() {
+    bool clear = false;
+    byte status = 0x00;
+
+    // try only 3 times before giving up, we don't want to spin forever
+    for (int i = 0; i < 10 && !clear; ++i)
+    {
+        // always delay right away, to give the chip some time to do
+        // do whatever we asked it to do.
+        delay(100);
+        Serial.print("Retrieve clear-to-send status..");
+        Wire.requestFrom(SI4737_BUS_ADDRESS, 1);
+        while (!Wire.available())
+        {
+            Serial.print('.');
+            delay(100);
+        }
+        status = Wire.read();
+        Serial.print(' ');
+        Serial.print(status, 16);
+        Serial.print(" -> ");
+        if (status & 0x80)
+        {
+            clear = true;
+        }
+    }
+    return status;
+}
+
+bool translateChipStatus(byte status) {
+    if (status & 0x80)
+    {
+        Serial.print("CTS ");
+    }
+    if (status & 0x40)
+    {
+        Serial.print("ERROR ");
+    }
+    Serial.println();
+    return status == 0x80;
+}
+
+bool translateI2CStatus(byte status) {
+    Serial.print("I2C status: ");
+    Serial.print(status);
+    Serial.print(" -> ");
+    switch (status)
+    {
+    case 0: Serial.print("OK"); break;
+    case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
+    case 2: Serial.print("ERR: received NACK on transmit of address."); break;
+    case 3: Serial.print("ERR: received NACK on transmit of data."); break;
+    default: Serial.print("ERR: unknown."); break;
+    }
+    Serial.println();
+    return status == 0;
+}
+
+void prepareChip() {
     Serial.println("Si4737 setup sequence:");
 
     Serial.print("Set RSTb LOW, set power HIGH... ");
@@ -48,54 +132,6 @@ void setup()
     Serial.println("OK");
     Serial.println("Si4737 setup sequence complete!");
     Serial.println();
-
-    Serial.print("Writing POWER_UP command... ");
-    Wire.beginTransmission(SI4737_BUS_ADDRESS);
-    Wire.write(0x01); // POWER_UP
-    Wire.write(0xC0); // HIGH[XOSCEN], LOW[FM_RECV]
-    Wire.write(0x50); // ANALOG_OUT
-    byte status = Wire.endTransmission(false);
-    Serial.print("I2C status: ");
-    Serial.print(status);
-    Serial.print(" -> ");
-    switch (status)
-    {
-    case 0: Serial.print("OK"); break;
-    case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
-    case 2: Serial.print("ERR: received NACK on transmit of address."); break;
-    case 3: Serial.print("ERR: received NACK on transmit of data."); break;
-    default: Serial.print("ERR: unknown."); break;
-    }
-    Serial.println();
-
-    if (status == 0)
-    {
-        bool clear = false;
-        while (!clear)
-        {
-            Serial.print("Retrieve clear-to-send status..");
-            Wire.requestFrom(SI4737_BUS_ADDRESS, 1);
-            while (!Wire.available())
-            {
-                Serial.print('.');
-                delay(10);
-            }
-            status = Wire.read();
-            Serial.print(' ');
-            Serial.print(status, 16);
-            Serial.print(" -> ");
-            if (status & 0x80)
-            {
-                Serial.print("clear-to-send ");
-                clear = true;
-            }
-            if (status & 0x40)
-            {
-                Serial.print("ERROR ");
-            }
-            Serial.println();
-        }
-    }
 }
 
 void loop()
