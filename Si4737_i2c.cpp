@@ -581,21 +581,17 @@ byte Si4737::getStatus(void){
 	while(!Wire.available()) delayMicroseconds(100);
 	response = Wire.read();
 
-	//Serial.print(" gs");
-	//Serial.print(response);
-	if(response > 0){
+	if(!response){
 		Serial.print(F("\nSI4737 STS 0x"));
 		Serial.print(response, HEX);
-		//Serial.print(" [");
-		//Serial.print(response, BIN);
-		//Serial.println("]");
+
 		//Trimming end of status byte
-		if((response / 128) & 1) Serial.print(" CTS");
-		if((response / 64) & 1) Serial.print(" ERR");
-		if((response / 8) & 1) Serial.print(" RSQ");
-		if((response / 4) & 1) Serial.print(" RDS");
-		if((response / 2) & 1) Serial.print(" ASQ");
-		if(response & 1) Serial.print(" STC");
+		if(response & 0x80) Serial.print(" CTS");
+		if(response & 0x40) Serial.print(" ERR");
+		if(response & 0x08) Serial.print(" RSQ");
+		if(response & 0x04) Serial.print(" RDS");
+		if(response & 0x02) Serial.print(" ASQ");
+		if(response & 0x01) Serial.print(" STC");
 		Serial.print("\n\n");
 	}
 
