@@ -16,7 +16,12 @@ Send command 0x11: "c11w"
 #include <Si4737_i2c.h>
 
 //Create our Si4737 radio
-Si4737 radio;
+Si4737 radio(
+    SI4737_INTERFACE_I2C,
+    A0,
+    A3,
+    SI4737_PIN_GPO2_HWL,
+    SI4737_PIN_SEN_HWL);
 
 //Other variables we will use below
 byte response[16], command[8], numDigits, status, mode;
