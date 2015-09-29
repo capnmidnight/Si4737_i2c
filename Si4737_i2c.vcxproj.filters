@@ -15,20 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Si4735.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Si4737_i2c.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Si4735-private.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Si4735.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Si4737_i2c-private.h">
       <Filter>Header Files</Filter>
     </ClInclude>

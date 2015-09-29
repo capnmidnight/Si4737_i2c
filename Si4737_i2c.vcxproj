@@ -44,12 +44,9 @@
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Si4735.cpp" />
     <ClCompile Include="Si4737_i2c.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Si4735-private.h" />
-    <ClInclude Include="Si4735.h" />
     <ClInclude Include="Si4737_i2c-private.h" />
     <ClInclude Include="Si4737_i2c.h" />
   </ItemGroup>

@@ -1,27 +1,8 @@
-Arduino Si4737 I2C Library, adapted from Radu - Eosif Mihailescu (https://github.com/csdexter/Si4735).
-See below for more details.
+Arduino Si4737 I2C Library, adapted from
+  rickeywang - Rickey Wang (https://github.com/rickeywang/Si4737_i2c)
+    Radu - Eosif Mihailescu (https://github.com/csdexter/Si4735).
 
-This code is for the Si4737 breakout board made by Alex_K (http://forum.arduino.cc/index.php?topic=145187.msg1420076#msg1420076) of Arudino forums
-
-I could not get the Si4735 library to work with my board, so I figured I'd start from blank. Anything and everything concerning SPI has been removed. An example is available. 
-
-=== Hardware Notes ===
- * Quick connection reference:
-   I2C Mode, Si4735 -> Arduino:
-     SDIO      -> SDA     (Arduino bidirectional)
-     SCLK      -> SCL     (Arduino output)
-     #RESET    -> D9      (Arduino output)
-	 
-	 I don't know what those are:
-	 #SEN      -> tied high or low, tell the code which one with
-                  SI4735_PIN_SEN_HW*
-     GPO1      -> left floating
-     GPO2/#INT -> D2/INT0 (Arduino input)
-                  or (left floating or tied high, if not using interrupts)
-
-
-
-Original README:
+=-- Eosif Mihailescu --=========================================================
 
 Arduino Si4735 (and family) Library
 
@@ -83,3 +64,43 @@ HARDWARE NOTES:
 
 For general questions and updates on this library please contact the fork
 maintainer at <radu.mihailescu@linux360.ro>.
+
+=-- Rickey Wang --==============================================================
+
+See below for more details.
+
+This code is for the Si4737 breakout board made by Alex_K (http://forum.arduino.cc/index.php?topic=145187.msg1420076#msg1420076)
+of Arudino forums
+
+I could not get the Si4735 library to work with my board, so I figured I'd start
+from blank. Anything and everything concerning SPI has been removed. An example
+is available.
+
+=== Hardware Notes ===
+ * Quick connection reference:
+   I2C Mode, Si4735 -> Arduino:
+     SDIO      -> SDA     (Arduino bidirectional)
+     SCLK      -> SCL     (Arduino output)
+     #RESET    -> D9      (Arduino output)
+
+	 I don't know what those are:
+	 #SEN      -> tied high or low, tell the code which one with
+                  SI4735_PIN_SEN_HW*
+     GPO1      -> left floating
+     GPO2/#INT -> D2/INT0 (Arduino input)
+                  or (left floating or tied high, if not using interrupts)
+
+
+
+=-- Sean McBeth --=============================================================
+
+Note that the VCXPROJ files in the examples directory are meant to be opened in
+Microsoft Visual Studio using the Visual Micro plugin (http://www.visualmicro.com/).
+However, the INO files should work with the standard Arduino IDE without any
+trouble.
+
+My efforts here are to make a cleaner library, an example that demonstrates raw
+communicating over I2C to the SI4737 to demonstrate adherence to the programming
+manual (https://www.silabs.com/Support%20Documents/TechnicalDocs/AN332.pdf),
+and a more complete example that interfaces with some external hardware of a
+specific design.
