@@ -16,7 +16,8 @@ void prepareChip();
 bool translateI2CStatus(byte);
 bool translateChipStatus(byte);
 byte getChipStatus();
-byte sendCommand(byte, const byte*, int);
+bool sendCommand(const char*, const byte, const size_t, const byte*, size_t, byte*, bool = true);
+void printResponse(const char*, const size_t, const byte*, int = 16);
 
 void setup()
 {
@@ -33,66 +34,120 @@ void setup()
 
     prepareChip();
 
-    Serial.print("Writing POWER_UP command... ");
-    Wire.beginTransmission(SI4737_BUS_ADDRESS);
-    Wire.write(0x01); // POWER_UP
-    Wire.write(0xC0); // HIGH[XOSCEN], LOW[FM_RECV]
-    Wire.write(0x05); // ANALOG_OUT
-    byte status = Wire.endTransmission(false);
+    byte POWER_UP[] = { 0x01, 2, 1 };
+    byte GET_REV[] = { 0x10, 0, 8 };
 
-    if (translateI2CStatus(status))
+    byte ARGS[7] = { 0,0,0,0,0,0,0 };
+    byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+    ARGS[0] = 0x10;
+    ARGS[1] = 0x05;
+    if (sendCommand("POWER_UP", 0x01, 2, ARGS, 0, RESP)
+        && sendCommand("GET_REV", 0x10, 0, ARGS, 8, RESP))
     {
-        status = getChipStatus();
-        if (translateChipStatus(status)) 
-        {
+        printResponse("Revision", 8, RESP);
 
+        // get volume
+        ARGS[0] = 0x00; // always 0
+        ARGS[1] = 0x40;
+        ARGS[2] = 0x00;
+        if (sendCommand("GET_PROPERTY: VOLUME", 0x13, 3, ARGS, 3, RESP)) 
+        {
+            printResponse("Volume", 3, RESP);
+
+            // set volume
+            ARGS[0] = 0x00; // always 0
+            ARGS[1] = 0x40;
+            ARGS[2] = 0x00;
+            ARGS[3] = 0x00;
+            ARGS[4] = 0x50;
+            if (sendCommand("SET_PROPERTY: VOLUME", 0x12, 5, ARGS, 0, RESP, false))
+            {
+                if (sendCommand("GET_PROPERTY: VOLUME", 0x13, 3, ARGS, 3, RESP))
+                {
+                    printResponse("Volume", 3, RESP);
+                    if (sendCommand("POWER_DOWN", 0x11, 0, ARGS, 0, RESP))
+                    {
+                        Serial.println("Successfully shut down.");
+                    }
+                }
+            }
         }
     }
 }
 
-byte getChipStatus() {
-    bool clear = false;
-    byte status = 0x00;
+void printResponse(const char* name, const size_t numResp, const byte* resp, int radix)
+{
+    Serial.print(name);
+    Serial.print(": ");
+    for (int i = 0; i < numResp; ++i)
+    {
+        Serial.print(resp[i], radix);
+        Serial.print(' ');
+    }
+    Serial.println();
+}
 
+bool sendCommand(const char* name, const byte cmd, const size_t numArgs, const byte* args, size_t numResp, byte* resp, bool checkCTS)
+{
+    if (checkCTS) ++numResp;
+    Serial.print("Sending ");
+    Serial.print(name);
+    Serial.print("... ");
+    Wire.beginTransmission(SI4737_BUS_ADDRESS);
+    Wire.write(cmd);
+    if (numArgs > 0)
+    {
+        Wire.write(args, numArgs);
+    }
+    byte status = Wire.endTransmission(false);
+    bool i2cGood = translateI2CStatus(status);
+    bool cmdGood = numResp > 0 ? false : true;
     // try only 3 times before giving up, we don't want to spin forever
-    for (int i = 0; i < 10 && !clear; ++i)
+    for (int i = 0; i < 3 && i2cGood && !cmdGood; ++i)
     {
         // always delay right away, to give the chip some time to do
         // do whatever we asked it to do.
         delay(100);
-        Serial.print("Retrieve clear-to-send status..");
-        Wire.requestFrom(SI4737_BUS_ADDRESS, 1);
-        while (!Wire.available())
+        Serial.print("Retrieving response..");
+        Wire.requestFrom(SI4737_BUS_ADDRESS, numResp);
+        while (Wire.available() < numResp)
         {
             Serial.print('.');
             delay(100);
         }
-        status = Wire.read();
-        Serial.print(' ');
-        Serial.print(status, 16);
-        Serial.print(" -> ");
-        if (status & 0x80)
+        if (checkCTS) 
         {
-            clear = true;
+            --numResp;
+            byte status = Wire.read();
+            Serial.print(' ');
+            Serial.print(status, 16);
+            Serial.print(" -> ");
+
+            if (status & 0x80)
+            {
+                Serial.print("CTS ");
+                cmdGood = true;
+            }
+
+            if (status & 0x40)
+            {
+                Serial.print("ERROR ");
+            }
+
+            Serial.println();
         }
+        Wire.readBytes(resp, numResp);
     }
-    return status;
+    return i2cGood && cmdGood;
 }
 
-bool translateChipStatus(byte status) {
-    if (status & 0x80)
-    {
-        Serial.print("CTS ");
-    }
-    if (status & 0x40)
-    {
-        Serial.print("ERROR ");
-    }
-    Serial.println();
+bool translateChipStatus(const byte status)
+{
     return status == 0x80;
 }
 
-bool translateI2CStatus(byte status) {
+bool translateI2CStatus(const byte status)
+{
     Serial.print("I2C status: ");
     Serial.print(status);
     Serial.print(" -> ");
@@ -108,7 +163,8 @@ bool translateI2CStatus(byte status) {
     return status == 0;
 }
 
-void prepareChip() {
+void prepareChip()
+{
     Serial.println("Si4737 setup sequence:");
 
     Serial.print("Set RSTb LOW, set power HIGH... ");
