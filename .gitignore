@@ -4,3 +4,5 @@ examples/BasicSi4737_I2CExample/__vm/.BasicSi4737_I2CExample.vsarduino.h
 examples/BasicSi4737_I2CExample/__vm/Compile.vmps.xml
 examples/BasicSi4737_I2CExample/__vm/Configuration.Debug.vmps.xml
 examples/BasicSi4737_I2CExample/__vm/Upload.vmps.xml
+examples/BasicSi4737_I2CExample/Debug/BasicSi4.C5F80730.tlog/BasicSi4737_I2CExample.lastbuildstate
+examples/BasicSi4737_I2CExample/Debug/BasicSi4737_I2CExample.log
