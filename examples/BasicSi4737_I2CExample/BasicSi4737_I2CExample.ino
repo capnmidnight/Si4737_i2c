@@ -31,7 +31,7 @@ byte ARGS[7] = { 0,0,0,0,0,0,0 };
 byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 bool ready = true, CTS = true, needCTS = false, STC = true, needSTC = false;
-int step = 0, expResp = 0;
+int step = -1, expResp = 0;
 
 void prepareChip();
 void wait(int);
@@ -39,6 +39,9 @@ void sleep(int);
 bool sendCommand(const char*, const byte, const size_t);
 void printBuffer(const char*, const size_t, const byte*, int = 16);
 void GPO2InteruptHandler();
+void getStatus();
+void advanceStep();
+void executeStep();
 
 void setup()
 {
@@ -70,116 +73,163 @@ void loop()
     if (ready)
     {
         ready = false;
-        bool needStatus = needCTS || needSTC;
-        if (expResp > 0 || needStatus)
+        getStatus();
+        if (!needCTS || CTS)
         {
-            Serial.print("... Retrieving response...");
-            Wire.requestFrom(SI4737_BUS_ADDRESS, expResp + (needStatus ? 1 : 0));
-            while (Wire.available() < expResp)
+            advanceStep();
+            executeStep();
+        }
+    }
+}
+
+void getStatus()
+{
+    bool needStatus = needCTS || needSTC;
+    if (expResp > 0 || needStatus)
+    {
+        Serial.print("... ");
+        Wire.requestFrom(SI4737_BUS_ADDRESS, expResp + (needStatus ? 1 : 0));
+        while (Wire.available() < expResp)
+        {
+            Serial.print('.');
+            sleep(100);
+        }
+
+        if (needStatus)
+        {
+            byte status = Wire.read();
+            if (needCTS && (status & 0x80) != 0)
             {
-                Serial.print('.');
-                sleep(100);
+                CTS = true;
             }
 
-            if (needStatus)
+            if (needSTC && (status & 0x01) != 0)
             {
-                byte status = Wire.read();
-                if (needCTS && (status & 0x80) != 0)
-                {
-                    CTS = true;
-                }
-
-                if (needSTC && (status & 0x01) != 0)
-                {
-                    STC = true;
-                }
-
-                if (status & 0x80)
-                {
-                    Serial.print("CTS ");
-                }
-
-                if (status & 0x40)
-                {
-                    Serial.print("ERROR ");
-                }
-
-                if (status & 0x01)
-                {
-                    Serial.print("STC ");
-                }
+                STC = true;
             }
 
-            if (expResp > 0) 
+            if (status & 0x80)
             {
-                Wire.readBytes(RESP, expResp);
-                printBuffer("RESP", expResp, RESP);
-                expResp = 0;
+                Serial.print("CTS ");
+            }
+
+            if (status & 0x40)
+            {
+                Serial.print("ERROR ");
+            }
+
+            if (status & 0x01)
+            {
+                Serial.print("STC ");
             }
         }
 
-        Serial.print("\nstep ");
-        Serial.print(step);
-        Serial.print(": ");
-        switch (step)
+        if (expResp > 0)
         {
-        case 0:
-            // do the powerup shuffle
-            ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_X_OSC_EN | POWERUP_FUNC_FM_RCV;
-            ARGS[1] = POWERUP_OPMODE_ANALOG;
-            needCTS = true;
-            sendCommand("POWER_UP", 0x01, 2);
-            break;
-
-        case 1:
-            // enable GPIO pins, enable all to avoid excessive current consumption
-            // due to ascillation.
-            ARGS[0] = 0x0E;
-            needCTS = true;
-            sendCommand("GPIO_CTL", 0x80, 1);
-            break;
-
-        case 2:
-            // Set the interupt sources
-            ARGS[0] = 0x00; // always 0
-            ARGS[1] = 0x00;
-            ARGS[2] = 0x01;
-            ARGS[3] = 0x00;
-            ARGS[4] = 0x81;
-            sendCommand("SET_PROPERTY: GPO_IEN", 0x12, 5);
-            ready = true;
-            break;
-
-        case 3:
-            // Tune to 97.1
-            ARGS[0] = 0x00; // always 0
-            ARGS[1] = (9710 & 0xff00) >> 8;
-            ARGS[2] = (9710 & 0x00ff);
-            ARGS[3] = 0x00; // automatically set the tuning cap
-            needCTS = true;
-            needSTC = true;
-            sendCommand("FM_TUNE_FREQ: 97.1", 0x20, 4);
-            break;
-
-        case 4:
-            Serial.print("Waiting a few seconds");
-            wait(3);
-            Serial.println(" OK");
-            ready = true;
-            break;
-
-        case 5:
-            ARGS[0] = 0x00;
-            expResp = 7;
-            needCTS = true;
-            sendCommand("GET_PROPERTY: FM_TUNE_STATUS", 0x13, 1);
-            break;
-
-        case 6:
-            printBuffer("Tune", 7, RESP);
-            Serial.println("All done");
-            break;
+            Wire.readBytes(RESP, expResp);
+            printBuffer("RESP", expResp, RESP);
+            expResp = 0;
         }
+    }
+}
+
+void advanceStep()
+{
+    if (!needSTC || STC)
+    {
+        ++step;
+    }
+    else
+    {
+        sleep(1000);
+    }
+
+    needCTS = false;
+    CTS = false;
+    needSTC = false;
+    STC = false;
+}
+
+void executeStep()
+{
+    Serial.print("\nstep ");
+    Serial.print(step);
+    Serial.print(": ");
+    switch (step)
+    {
+    case 0:
+        // do the powerup shuffle
+        ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_FUNC_FM_RCV;
+        ARGS[1] = POWERUP_OPMODE_ANALOG;
+        needCTS = true;
+        sendCommand("POWER_UP", 0x01, 2);
+        break;
+
+    case 1:
+        // enable GPIO pins, enable all to avoid excessive current consumption
+        // due to ascillation.
+        ARGS[0] = 0x0E;
+        needCTS = true;
+        sendCommand("GPIO_CTL", 0x80, 1);
+        break;
+
+    case 2:
+        // Set the interupt sources
+        ARGS[0] = 0x00; // always 0
+        ARGS[1] = 0x00;
+        ARGS[2] = 0x01;
+        ARGS[3] = 0x00;
+        ARGS[4] = 0x81;
+        sendCommand("SET_PROPERTY: GPO_IEN", 0x12, 5);
+        // always delay 10ms after SET_PROPERTY. It has no CTS response,
+        // but the 10ms is guaranteed.
+        delay(10); 
+        ready = true;
+        break;
+
+    case 3:
+        // Get current tuning
+        ARGS[0] = 0x01;
+        expResp = 7;
+        needCTS = true;
+        sendCommand("FM_TUNE_STATUS", 0x22, 1);
+        break;
+
+    case 4:
+        // Tune to 97.1
+        ARGS[0] = 0x00; // always 0
+        ARGS[1] = (9710 & 0xff00) >> 8;
+        ARGS[2] = (9710 & 0x00ff);
+        ARGS[3] = 0x00; // automatically set the tuning cap
+        needCTS = true;
+        sendCommand("FM_TUNE_FREQ: 97.1", 0x20, 4);
+        break;
+
+    case 5:
+        // Check interupt status
+        needCTS = true;
+        needSTC = true;
+        sendCommand("GET_INT_STATUS", 0x14, 0);
+        break;
+
+    case 6:
+        Serial.print("Waiting a few seconds");
+        wait(3);
+        Serial.println(" OK");
+        ready = true;
+        break;
+
+    case 7:
+        ARGS[0] = 0x00;
+        expResp = 7;
+        needCTS = true;
+        sendCommand("GET_PROPERTY: FM_TUNE_STATUS", 0x13, 1);
+        break;
+
+    case 8:
+        printBuffer("Tune", 7, RESP);
+        Serial.println("All done");
+        break;
     }
 }
 
@@ -205,21 +255,32 @@ void printBuffer(const char* name, const size_t size, const byte* buffer, int ra
     {
         for (int i = 0; i < size; ++i)
         {
+            if (radix == 16) 
+            {
+                Serial.print("0x");
+                if (buffer[i] < radix)
+                {
+                    Serial.print(0);
+                }
+            }
             Serial.print(buffer[i], radix);
+            if (radix == 2)
+            {
+                Serial.print('b');
+            }
             if (i < (size - 1))
             {
                 Serial.print(", ");
             }
         }
     }
-    Serial.println(')');
+    Serial.print(')');
 }
 
 bool sendCommand(const char* name, const byte cmd, const size_t numArgs)
 {
     Serial.print("CMD ");
     printBuffer(name, numArgs, ARGS);
-    Serial.print("... ");
     Wire.beginTransmission(SI4737_BUS_ADDRESS);
     Wire.write(cmd);
     if (numArgs > 0)
