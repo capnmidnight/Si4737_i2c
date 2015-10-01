@@ -10,14 +10,16 @@ Author:	Sean
 #define CLOCK_SHIFT_5V 0
 #define CLOCK_SHIFT_3_3V 1
 #define CLOCK_SHIFT CLOCK_SHIFT_3_3V
-#define BASE_CLOCK 16000000
-#define REAL_CLOCK BASE_CLOCK >> CLOCK_SHIFT
+#define USE_SOFTWARE_CLOCK
+
+#define GPO2_INTERUPT_PIN_OPT_1 2
+#define GPO2_INTERUPT_PIN_OPT_2 3
+#define GPO2_INTERUPT_PIN GPO2_INTERUPT_PIN_OPT_1
 
 #define SI4737_BUS_ADDRESS 0x11
-#define POWER_PIN 8
-#define SI4737_PIN_RESET A0
-#define GPO2_INTERUPT_PIN 3
-#define CLOCK_PIN 9
+#define POWER_PIN A0
+#define SI4737_PIN_RESET A1
+#define CLOCK_PIN A2
 
 #define POWERUP_CTS_INT_EN 0x80
 #define POWERUP_GPO2_EN 0x40
@@ -169,13 +171,16 @@ void executeStep()
         // do the powerup shuffle
         needCTS = true;
         ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_FUNC_FM_RCV;
+#ifndef USE_SOFTWARE_CLOCK
+        ARGS[0] |= POWERUP_X_OSC_EN;
+#endif
         ARGS[1] = POWERUP_OPMODE_ANALOG;
         sendCommand("POWER_UP", 0x01, 2);
         break;
 
     case 1:
         // enable GPIO pins, enable all to avoid excessive current consumption
-        // due to ascillation.
+        // due to oscillation.
         needCTS = true;
         ARGS[0] = 0x0E;
         sendCommand("GPIO_CTL", 0x80, 1);
@@ -211,6 +216,7 @@ void executeStep()
 
     case 4:
         // Set the reference clock frequency
+#ifdef USE_SOFTWARE_CLOCK
         ARGS[0] = 0x00; // always 0
         ARGS[1] = 0x02;
         ARGS[2] = 0x01;
@@ -220,6 +226,7 @@ void executeStep()
         // always delay 10ms after SET_PROPERTY. It has no CTS response,
         // but the 10ms is guaranteed.
         delay(10);
+#endif
         ready = true;
         break;
 
@@ -238,16 +245,16 @@ void executeStep()
         Serial.print("Station: ");
         Serial.println(highByte(RESP[0]) | RESP[1]);
         needCTS = true;
-        // Tune to WB 162.450
+        // Tune WB
         //f = translateWB(162450);
-        // Tune to FM 98.70
-        f = 9870;
+        // Tune FM
+        f = 8850;
         ARGS[0] = 0x00; // always 0
         ARGS[1] = (f & 0xff00) >> 8;
         ARGS[2] = (f & 0x00ff);
         //sendCommand("WB_TUNE_FREQ: 162.450", 0x50, 3);
         ARGS[3] = 0x00; // automatically set the tuning cap
-        sendCommand("FM_TUNE_FREQ: 98.7", 0x20, 4);
+        sendCommand("FM_TUNE_FREQ: 88.5", 0x20, 4);
         break;
 
     case 7:
@@ -276,7 +283,7 @@ void executeStep()
     case 10:
         // seek up
         needCTS = true;
-        ARGS[0] = 0x08;
+        ARGS[0] = 0x0C;
         sendCommand("FM_SEEK_START: UP", 0x21, 1);
         break;
 
@@ -301,25 +308,10 @@ void executeStep()
         wait(5);
         Serial.println(" OK");
         ready = true;
+        step = 9;
         break;
 
     case 14:
-        needCTS = true;
-        ARGS[0] = 0x01;
-        expResp = 7;
-        sendCommand("FM_TUNE_STATUS", 0x22, 1);
-        break;
-
-    case 15:
-        Serial.print("Station: ");
-        Serial.println((((int)RESP[1]) << 8) | RESP[2]);
-        Serial.print("Waiting a few seconds");
-        wait(5);
-        Serial.println(" OK");
-        ready = true;
-        break;
-
-    case 16:
         Serial.print("Station: ");
         Serial.println((((int)RESP[1]) << 8) | RESP[2]);
         Serial.println("All done");
@@ -406,7 +398,7 @@ void prepareChip()
     sleep(100);
     Serial.println("OK");
 
-
+#ifdef USE_SOFTWARE_CLOCK
     Serial.print("Start the clock signal and wait 500ms for it to stabalize... ");
     Serial.flush();
     pinMode(CLOCK_PIN, OUTPUT);
@@ -418,6 +410,7 @@ void prepareChip()
     sei(); //allow interrupts
     sleep(500);
     Serial.println("OK");
+#endif
 
     Serial.print("Set RESTb HIGH and wait at least 10ns... ");
     digitalWrite(SI4737_PIN_RESET, HIGH);
@@ -427,10 +420,12 @@ void prepareChip()
     Serial.println();
 }
 
+#ifdef USE_SOFTWARE_CLOCK
 ISR(TIMER1_COMPA_vect)
 {
     digitalWrite(CLOCK_PIN, clockPinState = !clockPinState);
 }
+#endif
 
 int translateWB(int wb)
 {
