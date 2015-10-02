@@ -26,13 +26,12 @@ void setup()
     setGPIOInterruptSources(false, false, false, true, true, true, false, true);
     setReferenceClockPrescale(1);
     setReferenceClockFrequency(31250);
-    getFMTuneStatus();
     setFMTuneFrequency(8850);
 }
 
 void loop()
 {
+    Serial.println(getFMTuneStatus());
     wait(5);
-    getFMTuneStatus();
     seekFM(true, true);
 }
