@@ -28,9 +28,6 @@ byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false;
 int expResp = 0, clockPinState = LOW;
 
-void(*currentStep)(void);
-void(*nextStep)(void);
-
 void prepareChip();
 void wait(int);
 void sleep(int);
@@ -39,44 +36,19 @@ void GPO2InteruptHandler();
 void getStatus();
 void advanceStep();
 int translateWB(int);
-void timer1_setup(byte, int, byte, byte, byte);
 
 void GPO2InteruptHandler()
 {
     interruptReceived = true;
 }
 
-void loop()
+void waitForInterrupt()
 {
-    if (interruptReceived)
+    while (!interruptReceived)
     {
-        interruptReceived = false;
-        getStatus();
-        if (!needCTS || CTS)
-        {
-            advanceStep();
-            (*currentStep)();
-        }
+        sleep(100);
     }
-}
-
-void advanceStep()
-{
-    if (!needSTC || STC)
-    {
-        currentStep = nextStep;
-        nextStep = 0;
-    }
-    else
-    {
-        sleep(1000);
-    }
-
-    needCTS = false;
-    CTS = false;
-    needSTC = false;
-    STC = false;
-    expResp = 0;
+    interruptReceived = false;
 }
 
 ////////////////////////////////////////////////////////////
@@ -85,12 +57,10 @@ void advanceStep()
 
 void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExpected, bool stcExpected, int arg0 = -1, int arg1 = -1, int arg2 = -1, int arg3 = -1, int arg4 = -1, int arg5 = -1, int arg6 = -1)
 {
+    CTS = false;
+    STC = false;
     needCTS = ctsExpected;
     needSTC = stcExpected;
-    if (!needCTS && !needSTC)
-    {
-        interruptReceived = true;
-    }
     expResp = responseLength;
     static int args[MAX_NUM_ARGS];
     static byte params[MAX_NUM_ARGS];
@@ -153,11 +123,13 @@ void getStatus()
             if (needCTS && (status & 0x80) != 0)
             {
                 CTS = true;
+                needCTS = false;
             }
 
             if (needSTC && (status & 0x01) != 0)
             {
                 STC = true;
+                needSTC = false;
             }
 
             if (status & 0x80)
@@ -181,6 +153,7 @@ void getStatus()
             Wire.readBytes(RESP, expResp);
             printBuffer("RESP", expResp, RESP);
         }
+        expResp = 0;
         Serial.println();
     }
 }
@@ -189,10 +162,6 @@ void printStation()
 {
     Serial.print("Station: ");
     Serial.println(makeWord(RESP[1], RESP[2]));
-    Serial.print("Waiting a few seconds");
-    wait(5);
-    Serial.println(" OK");
-    interruptReceived = true;
 }
 
 ////////////////////////////////////////////////////////////
@@ -227,7 +196,7 @@ Available in: All
 
 Response Bytes: None (FUNC != QUERY_LIBRARY_ID), Seven (FUNC = QUERY_LIBRARY_ID)
 */
-void powerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false, bool enableCTSInterrupt = true, bool enableGP02 = true, bool enableXOSC = false, bool enablePatch = false)
+void cmdPowerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false, bool enableCTSInterrupt = true, bool enableGP02 = true, bool enableXOSC = false, bool enablePatch = false)
 {
 #define POWER_UP 0x01
 #define POWER_UP_CTS_INT_EN 0x80
@@ -252,11 +221,14 @@ void powerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false
     if (analogOutput) outputMode |= POWER_UP_OPMODE_ANALOG;
     if (digitalOutput) outputMode |= POWER_UP_OPMODE_DIGITAL;
 
-    transmitCommand(
-        "POWER_UP",
-        POWER_UP, 0, true, false,
-        options | funcMode,
-        outputMode);
+    transmitCommand("POWER_UP", POWER_UP, 0, true, false, options | funcMode, outputMode);
+}
+
+void powerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false, bool enableCTSInterrupt = true, bool enableGP02 = true, bool enableXOSC = false, bool enablePatch = false) 
+{
+    cmdPowerUp(funcMode, analogOutput, digitalOutput, enableCTSInterrupt, enableGP02, enableXOSC, enablePatch);
+    waitForInterrupt();
+    getStatus();
 }
 
 /*
@@ -268,13 +240,18 @@ Available in : All
 
 Response bytes : Fifteen(Si4705 / 06 only), Eight(Si4704 / 2x / 3x / 4x)
 */
-void getRevision(bool isSI4705or06 = false)
+void cmdGetRevision(bool isSI4705or06 = false)
 {
 #define GET_REV 0x10
 
-    transmitCommand(
-        "GET_REV",
-        GET_REV, isSI4705or06 ? 15 : 8, true, false);
+    transmitCommand("GET_REV", GET_REV, isSI4705or06 ? 15 : 8, true, false);
+}
+
+void printRevision(bool isSI4705or06 = false)
+{
+    cmdGetRevision(isSI4705or06);
+    waitForInterrupt();
+    getStatus();
 }
 
 /*
@@ -298,9 +275,7 @@ void powerDown()
 {
 #define POWER_DOWN 0x11
 
-    transmitCommand(
-        "POWER_DOWN",
-        POWER_DOWN, 0, true, false);
+    transmitCommand("POWER_DOWN", POWER_DOWN, 0, false, false);
 }
 
 /*
@@ -336,7 +311,7 @@ Available in: All
 
 Response bytes: Three
 */
-void getProperty(const char* name, uint16_t propertyNumber)
+void cmdGetProperty(const char* name, uint16_t propertyNumber)
 {
 #define GET_PROPERTY 0x13
 
@@ -345,6 +320,15 @@ void getProperty(const char* name, uint16_t propertyNumber)
         GET_PROPERTY, 3, true, false,
         0x00, // always 0
         highByte(propertyNumber), lowByte(propertyNumber));
+}
+
+uint16_t getProperty(const char* name, uint16_t propertyNumber)
+{
+    cmdGetProperty(name, propertyNumber);
+    waitForInterrupt();
+    getStatus();
+    uint16_t value = makeWord(RESP[1], RESP[2]);
+    return value;
 }
 
 /*
@@ -356,13 +340,31 @@ when in powerup mode.
 
 Available in: All
 */
-void getInterruptStatus()
+void cmdGetInterruptStatus()
 {
 #define GET_INT_STATUS 0x14
 
     transmitCommand(
         "GET_INT_STATUS",
         GET_INT_STATUS, 0, true, true);
+}
+
+bool getInterruptStatus()
+{
+    cmdGetInterruptStatus();
+    waitForInterrupt();
+    getStatus();
+    return STC;
+}
+
+void waitForSTC()
+{
+    waitForInterrupt();
+    getStatus();
+    while (!getInterruptStatus())
+    {
+        sleep(1000);
+    }
 }
 
 /*
@@ -385,7 +387,7 @@ Note: Freeze bit is supported in FMRX components 4.0 or later.
 
 Available in: All
 */
-void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0)
+void cmdSetFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0)
 {
 #define FM_TUNE_FREQ 0x20
 #define FM_TUNE_FREQ_FREEZE 0x02
@@ -404,6 +406,12 @@ void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false
         antennaCapValue);
 }
 
+void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0)
+{
+    cmdSetFMTuneFrequency(f, freezeMetrics, fastTune, antennaCapValue);
+    waitForSTC();
+}
+
 /*
 Begins searching for a valid frequency. Clears any pending STCINT or RSQINT interrupt status. The CTS bit (and
 optional interrupt) is set when it is safe to send the next command. RSQINT status is only cleared by the RSQ
@@ -416,7 +424,7 @@ Receiver,” on page 228.
 
 Available in: All
 */
-void seekFM(bool seekUp, bool wrap)
+void cmdSeekFM(bool seekUp, bool wrap)
 {
 #define FM_SEEK_START 0x21
 #define FM_SEEK_START_UP 0x08
@@ -432,6 +440,12 @@ void seekFM(bool seekUp, bool wrap)
         options);
 }
 
+void seekFM(bool seekUp, bool wrap)
+{
+    cmdSeekFM(seekUp, wrap);
+    waitForSTC();
+}
+
 /*
 Returns the status of FM_TUNE_FREQ or FM_SEEK_START commands. The command returns the current
 frequency, RSSI, SNR, multipath, and the antenna tuning capacitance value (0-191). The command clears the
@@ -442,7 +456,7 @@ Available in: All
 
 Response bytes: Seven
 */
-void getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
+void cmdGetFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
 {
 #define FM_TUNE_STATUS 0x22
 #define FM_TUNE_STATUS_CANCEL 0x02
@@ -458,109 +472,13 @@ void getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
         options);
 }
 
-/*
-Returns status information about the received signal quality. The commands returns the RSSI, SNR, frequency
-offset, and stereo blend percentage. It also indicates valid channel (VALID), soft mute engagement (SMUTE), and
-AFC rail status (AFCRL). This command can be used to check if the received signal is above the RSSI high
-threshold as reported by RSSIHINT, or below the RSSI low threshold as reported by RSSILINT. It can also be used
-to check if the signal is above the SNR high threshold as reported by SNRHINT, or below the SNR low threshold as
-reported by SNRLINT. For the Si4706/4x, it can be used to check if the detected multipath is above the multipath
-high threshold as reported by MULTHINT, or below the multipath low threshold as reported by MULTLINT. If the
-PILOT indicator is set, it can also check whether the blend has crossed a threshold as indicated by BLENDINT.
-The command clears the RSQINT, BLENDINT, SNRHINT, SNRLINT, RSSIHINT, RSSILINT, MULTHINT, and
-MULTLINT interrupt bits when INTACK bit of ARG1 is set. The CTS bit (and optional interrupt) is set when it is safe
-to send the next command. This command may only be sent when in powerup mode.
-
-Available in: All
-
-Response bytes: Seven
-*/
-
-void getFMRSQStatus(bool ackInterrupts = true)
+byte getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
 {
-#define FM_RSQ_STATUS 0x23
-#define FM_RSQ_STATUS_INTACK 0x01
-
-    byte options = 0;
-    if (ackInterrupts) options |= FM_RSQ_STATUS_INTACK;
-
-    transmitCommand(
-        "FM_RSQ_STATUS",
-        FM_RSQ_STATUS, 7, true, false,
-        options);
-}
-
-/*
-Returns RDS information for current channel and reads an entry from the RDS FIFO. RDS information includes
-synch status, FIFO status, group data (blocks A, B, C, and D), and block errors corrected. This command clears
-the RDSINT interrupt bit when INTACK bit in ARG1 is set and, if MTFIFO is set, the entire RDS receive FIFO is
-cleared (FIFO is always cleared during FM_TUNE_FREQ or FM_SEEK_START). The CTS bit (and optional
-interrupt) is set when it is safe to send the next command. This command may only be sent when in power up
-mode. The FIFO size is 25 groups for FMRX component 2.0 or later, and 14 for FMRX component 1.0.
-
-Notes:
-1. FM_RDS_STATUS is supported in FMRX component 2.0 or later.
-2. MTFIFO is not supported in FMRX component 2.0.
-
-Available in: Si4705/06, Si4721, Si474x, Si4731/35/37/39, Si4785
-
-Response bytes: Twelve
-*/
-
-void getFMRDSStatus(bool statusOnly = false, bool emptyFIFO = false, bool ackRDSInterrupt = true)
-{
-#define FM_RDS_STATUS 0x24
-#define FM_RDS_STATUS_STATUSONLY 0x04
-#define FM_RDS_STATUS_MTFIFO 0x02
-#define FM_RDS_STATUS_INTACK 0x01
-
-    byte options = 0;
-    if (statusOnly) options |= FM_RDS_STATUS_STATUSONLY;
-    if (emptyFIFO) options |= FM_RDS_STATUS_MTFIFO;
-    if (ackRDSInterrupt) options |= FM_RDS_STATUS_INTACK;
-
-    transmitCommand(
-        "FM_RDS_STATUS", 
-        FM_RDS_STATUS, 12, true, false, 
-        options);
-}
-
-/*
-Returns the AGC setting of the device. The command returns whether the AGC is enabled or disabled and it
-returns the LNA Gain index. This command may only be sent when in powerup mode.
-
-Available in: All
-
-Response bytes: Two
-*/
-void getFMAGCStatus()
-{
-#define FM_AGC_STATUS 0x27
-
-    transmitCommand(
-        "FM_AGC_STATUS",
-        FM_AGC_STATUS, 2, true, false);
-}
-
-/*
-Overrides AGC setting by disabling the AGC and forcing the LNA to have a certain gain that ranges between 0
-(minimum attenuation) and 26 (maximum attenuation). This command may only be sent when in powerup mode.
-
-Available in: All
-*/
-void setFMAGCOverride(bool disableRFAGC, byte LNAGainIndex)
-{
-#define FM_AGC_OVERRIDE 0x28
-#define FM_AGC_OVERRIDE_RFAGCDIS 0x01
-
-    byte options = 0;
-    if (disableRFAGC) options |= FM_AGC_OVERRIDE_RFAGCDIS;
-
-    transmitCommand(
-        "FM_AGC_OVERRIDE",
-        FM_AGC_OVERRIDE, 0, true, false,
-        options,
-        LNAGainIndex);
+    cmdGetFMTuneStatus(cancelSeek, ackSTC);
+    waitForInterrupt();
+    getStatus();
+    printStation();
+    return RESP[3];
 }
 
 /*
@@ -577,7 +495,7 @@ function for GPO2 and/or GPO3 respectively.
 
 Available in: All except Si4710-A10
 */
-void setGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
+void cmdSetGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
 {
 #define GPIO_CTL 0x80
 #define GPIO_CTL_GPO3OEN 0x08
@@ -595,6 +513,12 @@ void setGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
         options);
 }
 
+void setGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
+{
+    cmdSetGPIOModes(enableGPIO1, enableGPIO2, enableGPIO3);
+    waitForInterrupt();
+}
+
 /*
 Sets the output level (high or low) for GPO1, 2, and 3. GPO1, 2, and 3 can be configured for output by setting the
 GPO1OEN, GPO2OEN, and GPO3OEN bit in the GPIO_CTL command. To avoid excessive current consumption
@@ -607,7 +531,7 @@ Note: GPIO_SET is fully-supported in FMRX component 2.0 or later. Only bit GPO3L
 
 Available in: All except Si4710-A10
 */
-void setGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
+void cmdSetGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
 {
 #define GPIO_SET 0x81
 #define GPIO_SET_GPO3LEVEL 0x08
@@ -623,6 +547,12 @@ void setGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
         "GPIO_SET",
         GPIO_SET, 0, true, false,
         options);
+}
+
+void setGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
+{
+    cmdSetGPIOLevel(highGPIO1, highGPIO2, highGPIO3);
+    waitForInterrupt();
 }
 
 ////////////////////////////////////////////////////////////
@@ -666,65 +596,6 @@ void setGPIOInterruptSources(bool repeatRSQ, bool repeatRDS, bool repeatSTC, boo
     if (enableSTC) value |= GPIO_IEN_STCIEN;
 
     setProperty("GPIO_IEN", GPIO_IEN, value);
-}
-
-/*
-Configures the digital audio output format. Configuration options include DCLK edge, data format, force mono, and
-sample precision.
-
-Available in: Si4705/06, Si4721/31/35/37/39, Si4730/34/36/38-D60 and later, Si4741/43/45, Si4784/85
-
-Default: 0x0000
-
-Note: DIGITAL_OUTPUT_FORMAT is supported in FM receive component 2.0 or later.
-*/
-void setDigitalOutputFormat(bool dclkFallingEdge, uint16_t mode, bool forceMono, uint16_t samplePrecisionMode)
-{
-#define DIGITAL_OUTPUT_FORMAT 0x0102
-#define DIGITAL_OUTPUT_FORMAT_OFALL_RISING 0x0000
-#define DIGITAL_OUTPUT_FORMAT_OFALL_FALLING 0x0080
-#define DIGITAL_OUTPUT_FORMAT_MODE_I2S 0x0000
-#define DIGITAL_OUTPUT_FORMAT_MODE_LEFT_JUSTIFIED 0x0030
-#define DIGITAL_OUTPUT_FORMAT_MODE_MSB_AT_2ND_DCLK 0x0040
-#define DIGITAL_OUTPUT_FORMAT_MODE_MSB_AT_1ST_DCLK 0x0060
-#define DIGITAL_OUTPUT_FORMAT_OMONO_USE_STEREO_BLEND 0x0000
-#define DIGITAL_OUTPUT_FORMAT_OMONO_FORCE_MONO 0x0008
-#define DIGITAL_OUTPUT_FORMAT_OSIZE_16 0x0000
-#define DIGITAL_OUTPUT_FORMAT_OSIZE_20 0x0001
-#define DIGITAL_OUTPUT_FORMAT_OSIZE_24 0x0002
-#define DIGITAL_OUTPUT_FORMAT_OSIZE_8 0x0003
-
-    uint16_t value = mode | samplePrecisionMode;
-    if (dclkFallingEdge) value |= DIGITAL_OUTPUT_FORMAT_OFALL_FALLING;
-    if (forceMono) value |= DIGITAL_OUTPUT_FORMAT_OMONO_FORCE_MONO;
-
-    setProperty("DIGITAL_OUTPUT_FORMAT", DIGITAL_OUTPUT_FORMAT, value);
-}
-
-/*
-Enables digital audio output and configures digital audio output sample rate in samples per second (sps). When
-DOSR[15:0] is 0, digital audio output is disabled. The over-sampling rate must be set in order to satisfy a minimum
-DCLK of 1 MHz. To enable digital audio output, program DOSR[15:0] with the sample rate in samples per second.
-The system controller must establish DCLK and DFS prior to enabling the digital audio output else the
-device will not respond and will require reset. The sample rate must be set to 0 before the DCLK/DFS is
-removed. FM_TUNE_FREQ command must be sent after the POWER_UP command to start the internal
-clocking before setting this property.
-
-Note: DIGITAL_OUPTUT_SAMPLE_RATE is supported in FM receive component 2.0 or later.
-
-Available in: Si4705/06, Si4721/31/35/37/39, Si4730/34/36/38-D60 and later, Si4741/43/45, Si4784/85
-
-Default: 0x0000 (digital audio output disabled)
-
-Units: sps
-
-Range: 32–48 ksps, 0 to disable digital audio output
-*/
-void setDigitalAudioSampleRate(uint16_t value) 
-{
-#define DIGITAL_AUDIO_SAMPLE_RATE 0x0104
-
-    setProperty("DIGITAL_AUDIO_SAMPLE_RATE", DIGITAL_AUDIO_SAMPLE_RATE, value);
 }
 
 /*
@@ -809,90 +680,6 @@ void setHardMute(bool muteLeft, bool muteRight)
     if (muteRight) value |= RX_HARD_MUTE_RIGHT;
 
     setProperty("RX_HARD_MUTE", RX_HARD_MUTE, value);
-}
-
-////////////////////////////////////////////////////////////
-// FINITE STATE MACHINE
-////////////////////////////////////////////////////////////
-
-void step_powerUp()
-{
-    powerUp(POWER_UP_FUNC_FM_RCV);
-    nextStep = step_enableGPIO;
-}
-
-// enable GPIO pins, enable all to avoid excessive current consumption
-// due to oscillation.
-void step_enableGPIO()
-{
-    setGPIOModes(true, true, true);
-    nextStep = step_setInterruptSource;
-}
-
-void step_setInterruptSource()
-{
-    setGPIOInterruptSources(false, false, false, true, true, true, false, true);
-    nextStep = step_setReferenceClockPrescale;
-}
-
-void step_setReferenceClockPrescale()
-{
-    setReferenceClockPrescale(1);
-    nextStep = step_setReferenceClockFrequency;
-}
-
-void step_setReferenceClockFrequency()
-{
-    setReferenceClockFrequency(31250);
-    nextStep = step_getCurrentTuning1;
-}
-
-void step_getCurrentTuning1()
-{
-    getFMTuneStatus();
-    nextStep = step_printStation1;
-}
-
-void step_printStation1()
-{
-    printStation();
-    nextStep = step_tuneToStation1;
-}
-
-void step_printStation2()
-{
-    printStation();
-    nextStep = step_seekToStation;
-}
-
-void step_tuneToStation1()
-{
-    setFMTuneFrequency(8850);
-    nextStep = step_getInterruptStatus1;
-}
-
-void step_getInterruptStatus1()
-{
-    getInterruptStatus();
-    nextStep = step_getTuneStatus1;
-}
-
-void step_getInterruptStatus2()
-{
-    getInterruptStatus();
-    nextStep = step_getTuneStatus1;
-}
-
-void step_getTuneStatus1()
-{
-    getFMTuneStatus();
-    nextStep = step_printStation2;
-}
-
-void step_seekToStation()
-{
-    seekFM(true, true);
-    nextStep = step_getInterruptStatus2;
 }
 
 void printBuffer(const char* name, const size_t size, const byte* buffer, int radix)
@@ -994,6 +781,10 @@ void wait(int seconds)
 
 
 
+
+
+
+
 void setup()
 {
     // NOTE: if you're running on a 3.3v Arduino, you should double the baud rate
@@ -1012,5 +803,18 @@ void setup()
 
     Wire.begin();
 
-    nextStep = step_powerUp;
+    powerUp(POWER_UP_FUNC_FM_RCV);
+    setGPIOModes(true, true, true);
+    setGPIOInterruptSources(false, false, false, true, true, true, false, true);
+    setReferenceClockPrescale(1);
+    setReferenceClockFrequency(31250);
+    getFMTuneStatus();
+    setFMTuneFrequency(8850);
+}
+
+void loop()
+{
+    getFMTuneStatus();
+    wait(5);
+    seekFM(true, true);
 }
