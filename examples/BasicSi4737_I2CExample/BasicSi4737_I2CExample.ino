@@ -39,7 +39,10 @@ byte ARGS[7] = { 0,0,0,0,0,0,0 };
 byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false;
-int step = -1, expResp = 0, clockPinState = LOW;
+int expResp = 0, clockPinState = LOW;
+
+void(*currentStep)(void);
+void(*nextStep)(void);
 
 void prepareChip();
 void wait(int);
@@ -49,12 +52,8 @@ void printBuffer(const char*, const size_t, const byte*, int = 16);
 void GPO2InteruptHandler();
 void getStatus();
 void advanceStep();
-void executeStep();
 int translateWB(int);
 void timer1_setup(byte, int, byte, byte, byte);
-
-void(*currentStep)(void);
-void(*nextStep)(void);
 
 void GPO2InteruptHandler()
 {
@@ -70,7 +69,7 @@ void loop()
         if (!needCTS || CTS)
         {
             advanceStep();
-            executeStep();
+            (*currentStep)();
         }
     }
 }
@@ -122,6 +121,7 @@ void getStatus()
             Wire.readBytes(RESP, expResp);
             printBuffer("RESP", expResp, RESP);
         }
+        Serial.println();
     }
 }
 
@@ -211,7 +211,7 @@ void step_setReferenceClockFrequency()
     nextStep = step_getCurrentTuning1;
 }
 
-void step_getCurrentTuning1()
+void getCurrentTuning() 
 {
     needCTS = true;
     ARGS[0] = 0x01;
@@ -219,18 +219,37 @@ void step_getCurrentTuning1()
     //sendCommand("WB_TUNE_STATUS", 0x52, 1);
     expResp = 7;
     sendCommand("FM_TUNE_STATUS", 0x22, 1);
+}
+
+void step_getCurrentTuning1()
+{
+    getCurrentTuning();
     nextStep = step_printStation1;
+}
+
+void printStation()
+{
+    Serial.print("Station: ");
+    Serial.println((((int)RESP[1]) << 8) | RESP[2]);
+    Serial.print("Waiting a few seconds");
+    wait(5);
+    Serial.println(" OK");
+    interruptReceived = true;
 }
 
 void step_printStation1()
 {
-    Serial.print("Station: ");
-    Serial.println(highByte(RESP[0]) | RESP[1]);
-    interruptReceived = true;
-    nextStep = step_tuneToStation;
+    printStation();
+    nextStep = step_tuneToStation1;
 }
 
-void step_tuneToStation()
+void step_printStation2()
+{
+    printStation();
+    nextStep = step_seekToStation;
+}
+
+void tuneToStation()
 {
     needCTS = true;
     // Tune WB
@@ -245,75 +264,51 @@ void step_tuneToStation()
     sendCommand("FM_TUNE_FREQ: 88.5", 0x20, 4);
 }
 
-void executeStep()
+void step_tuneToStation1()
 {
-    int f;
-    Serial.print("\nstep ");
-    Serial.print(step);
-    Serial.print(": ");
-    switch (step)
-    {
-    case 7:
-        // Check interupt status
-        needCTS = true;
-        needSTC = true;
-        sendCommand("GET_INT_STATUS", 0x14, 0);
-        break;
+    tuneToStation();
+    nextStep = step_checkInterruptStatus1;
+}
 
-    case 8:
-        needCTS = true;
-        ARGS[0] = 0x01;
-        expResp = 7;
-        sendCommand("FM_TUNE_STATUS", 0x22, 1);
-        break;
+void checkInterruptStatus()
+{
+    needCTS = true;
+    needSTC = true;
+    sendCommand("GET_INT_STATUS", 0x14, 0);
+}
 
-    case 9:
-        Serial.print("Station: ");
-        Serial.println((((int)RESP[1]) << 8) | RESP[2]);
-        Serial.print("Waiting a few seconds");
-        wait(5);
-        Serial.println(" OK");
-        interruptReceived = true;
-        break;
+void step_checkInterruptStatus1()
+{
+    checkInterruptStatus();
+    nextStep = step_getTuneStatus1;
+}
 
-    case 10:
-        // seek up
-        needCTS = true;
-        ARGS[0] = 0x0C;
-        sendCommand("FM_SEEK_START: UP", 0x21, 1);
-        break;
+void step_checkInterruptStatus2()
+{
+    checkInterruptStatus();
+    nextStep = step_getTuneStatus1;
+}
 
-    case 11:
-        // Check interupt status
-        needCTS = true;
-        needSTC = true;
-        sendCommand("GET_INT_STATUS", 0x14, 0);
-        break;
+void getTuneStatus()
+{
+    needCTS = true;
+    ARGS[0] = 0x01;
+    expResp = 7;
+    sendCommand("FM_TUNE_STATUS", 0x22, 1);
+}
 
-    case 12:
-        needCTS = true;
-        ARGS[0] = 0x01;
-        expResp = 7;
-        sendCommand("FM_TUNE_STATUS", 0x22, 1);
-        break;
+void step_getTuneStatus1()
+{
+    getTuneStatus();
+    nextStep = step_printStation2;
+}
 
-    case 13:
-        Serial.print("Station: ");
-        Serial.println((((int)RESP[1]) << 8) | RESP[2]);
-        Serial.print("Waiting a few seconds");
-        wait(5);
-        Serial.println(" OK");
-        interruptReceived = true;
-        step = 9;
-        break;
-
-    case 14:
-        Serial.print("Station: ");
-        Serial.println((((int)RESP[1]) << 8) | RESP[2]);
-        Serial.println("All done");
-        sendCommand("POWER_DOWN", 0x11, 0);
-        break;
-    }
+void step_seekToStation()
+{
+    needCTS = true;
+    ARGS[0] = 0x0C;
+    sendCommand("FM_SEEK_START: UP", 0x21, 1);
+    nextStep = step_checkInterruptStatus2;
 }
 
 void printBuffer(const char* name, const size_t size, const byte* buffer, int radix)
