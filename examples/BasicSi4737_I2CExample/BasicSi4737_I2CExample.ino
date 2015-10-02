@@ -17,7 +17,7 @@ Author:	Sean
 #define GPO2_INTERUPT_PIN GPO2_INTERUPT_PIN_OPT_1
 
 #define SI4737_BUS_ADDRESS 0x11
-#define POWER_PIN A0
+#define POWER_PIN 8
 #define SI4737_PIN_RESET A1
 #define CLOCK_PIN A2
 
