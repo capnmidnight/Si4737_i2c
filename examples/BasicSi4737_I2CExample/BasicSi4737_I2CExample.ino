@@ -38,7 +38,7 @@ Author:	Sean
 byte ARGS[7] = { 0,0,0,0,0,0,0 };
 byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
-bool ready = true, CTS = true, needCTS = false, STC = true, needSTC = false;
+bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false;
 int step = -1, expResp = 0, clockPinState = LOW;
 
 void prepareChip();
@@ -53,35 +53,19 @@ void executeStep();
 int translateWB(int);
 void timer1_setup(byte, int, byte, byte, byte);
 
-void setup()
-{
-    // NOTE: if you're running on a 3.3v Arduino, you should double the baud rate
-    // at which you run the SoftSerial library, but do not double it in the Serial
-    // Monitor, because the lower voltage Arduino's only run at half the clock
-    // rate but doesn't know it, so the SoftSerial code assumes it's running at full
-    // speed, which screws up the timing.
-    Serial.begin(115200 << CLOCK_SHIFT);
-    Serial.println();
-    Serial.println();
-    Serial.println("OK");
-
-    prepareChip();
-
-    attachInterrupt(digitalPinToInterrupt(GPO2_INTERUPT_PIN), GPO2InteruptHandler, FALLING);
-
-    Wire.begin();
-}
+void(*currentStep)(void);
+void(*nextStep)(void);
 
 void GPO2InteruptHandler()
 {
-    ready = true;
+    interruptReceived = true;
 }
 
 void loop()
 {
-    if (ready)
+    if (interruptReceived)
     {
-        ready = false;
+        interruptReceived = false;
         getStatus();
         if (!needCTS || CTS)
         {
@@ -145,7 +129,8 @@ void advanceStep()
 {
     if (!needSTC || STC)
     {
-        ++step;
+        currentStep = nextStep;
+        nextStep = 0;
     }
     else
     {
@@ -159,6 +144,107 @@ void advanceStep()
     expResp = 0;
 }
 
+void step_powerUp()
+{
+    needCTS = true;
+    ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_FUNC_FM_RCV;
+#ifndef USE_SOFTWARE_CLOCK
+    ARGS[0] |= POWERUP_X_OSC_EN;
+#endif
+    ARGS[1] = POWERUP_OPMODE_ANALOG;
+    sendCommand("POWER_UP", 0x01, 2);
+    nextStep = step_enableGPIO;
+}
+
+// enable GPIO pins, enable all to avoid excessive current consumption
+// due to oscillation.
+void step_enableGPIO()
+{
+    needCTS = true;
+    ARGS[0] = 0x0E;
+    sendCommand("GPIO_CTL", 0x80, 1);
+    nextStep = step_setInterruptSource;
+}
+
+void step_setInterruptSource()
+{
+    ARGS[0] = 0x00; // always 0
+    ARGS[1] = 0x00;
+    ARGS[2] = 0x01;
+    ARGS[3] = 0x00;
+    ARGS[4] = 0xC9;
+    sendCommand("SET_PROPERTY: GPO_IEN", 0x12, 5);
+    // always delay 10ms after SET_PROPERTY. It has no CTS response,
+    // but the 10ms is guaranteed.
+    delay(10);
+    interruptReceived = true;
+    nextStep = step_setReferenceClockPrescale;
+}
+
+void step_setReferenceClockPrescale()
+{
+    ARGS[0] = 0x00; // always 0
+    ARGS[1] = 0x02;
+    ARGS[2] = 0x02;
+    ARGS[3] = 0x00;
+    ARGS[4] = 0x01;
+    sendCommand("SET_PROPERTY: REFCLK_PRESCALE", 0x12, 5);
+    // always delay 10ms after SET_PROPERTY. It has no CTS response,
+    // but the 10ms is guaranteed.
+    delay(10);
+    interruptReceived = true;
+    nextStep = step_setReferenceClockFrequency;
+}
+
+void step_setReferenceClockFrequency()
+{
+    ARGS[0] = 0x00; // always 0
+    ARGS[1] = 0x02;
+    ARGS[2] = 0x01;
+    ARGS[3] = (31250 & 0xFF00) >> 8;
+    ARGS[4] = (31250 & 0xFF);
+    sendCommand("SET_PROPERTY: REFCLK_FREQ", 0x12, 5);
+    // always delay 10ms after SET_PROPERTY. It has no CTS response,
+    // but the 10ms is guaranteed.
+    delay(10);
+    interruptReceived = true;
+    nextStep = step_getCurrentTuning1;
+}
+
+void step_getCurrentTuning1()
+{
+    needCTS = true;
+    ARGS[0] = 0x01;
+    //expResp = 5;
+    //sendCommand("WB_TUNE_STATUS", 0x52, 1);
+    expResp = 7;
+    sendCommand("FM_TUNE_STATUS", 0x22, 1);
+    nextStep = step_printStation1;
+}
+
+void step_printStation1()
+{
+    Serial.print("Station: ");
+    Serial.println(highByte(RESP[0]) | RESP[1]);
+    interruptReceived = true;
+    nextStep = step_tuneToStation;
+}
+
+void step_tuneToStation()
+{
+    needCTS = true;
+    // Tune WB
+    //int f = translateWB(162450);
+    // Tune FM
+    int f = 8850;
+    ARGS[0] = 0x00; // always 0
+    ARGS[1] = (f & 0xff00) >> 8;
+    ARGS[2] = (f & 0x00ff);
+    //sendCommand("WB_TUNE_FREQ: 162.450", 0x50, 3);
+    ARGS[3] = 0x00; // automatically set the tuning cap
+    sendCommand("FM_TUNE_FREQ: 88.5", 0x20, 4);
+}
+
 void executeStep()
 {
     int f;
@@ -167,96 +253,6 @@ void executeStep()
     Serial.print(": ");
     switch (step)
     {
-    case 0:
-        // do the powerup shuffle
-        needCTS = true;
-        ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_FUNC_FM_RCV;
-#ifndef USE_SOFTWARE_CLOCK
-        ARGS[0] |= POWERUP_X_OSC_EN;
-#endif
-        ARGS[1] = POWERUP_OPMODE_ANALOG;
-        sendCommand("POWER_UP", 0x01, 2);
-        break;
-
-    case 1:
-        // enable GPIO pins, enable all to avoid excessive current consumption
-        // due to oscillation.
-        needCTS = true;
-        ARGS[0] = 0x0E;
-        sendCommand("GPIO_CTL", 0x80, 1);
-        break;
-
-    case 2:
-        // Set the interupt sources
-        ARGS[0] = 0x00; // always 0
-        ARGS[1] = 0x00;
-        ARGS[2] = 0x01;
-        ARGS[3] = 0x00;
-        ARGS[4] = 0xC9;
-        sendCommand("SET_PROPERTY: GPO_IEN", 0x12, 5);
-        // always delay 10ms after SET_PROPERTY. It has no CTS response,
-        // but the 10ms is guaranteed.
-        delay(10);
-        ready = true;
-        break;
-
-    case 3:
-        // Set the reference clock prescale
-        ARGS[0] = 0x00; // always 0
-        ARGS[1] = 0x02;
-        ARGS[2] = 0x02;
-        ARGS[3] = 0x00;
-        ARGS[4] = 0x01;
-        sendCommand("SET_PROPERTY: REFCLK_PRESCALE", 0x12, 5);
-        // always delay 10ms after SET_PROPERTY. It has no CTS response,
-        // but the 10ms is guaranteed.
-        delay(10);
-        ready = true;
-        break;
-
-    case 4:
-        // Set the reference clock frequency
-#ifdef USE_SOFTWARE_CLOCK
-        ARGS[0] = 0x00; // always 0
-        ARGS[1] = 0x02;
-        ARGS[2] = 0x01;
-        ARGS[3] = (31250 & 0xFF00) >> 8;
-        ARGS[4] = (31250 & 0xFF);
-        sendCommand("SET_PROPERTY: REFCLK_FREQ", 0x12, 5);
-        // always delay 10ms after SET_PROPERTY. It has no CTS response,
-        // but the 10ms is guaranteed.
-        delay(10);
-#endif
-        ready = true;
-        break;
-
-    case 5:
-        sleep(500);
-        // Get current tuning
-        needCTS = true;
-        ARGS[0] = 0x01;
-        //expResp = 5;
-        //sendCommand("WB_TUNE_STATUS", 0x52, 1);
-        expResp = 7;
-        sendCommand("FM_TUNE_STATUS", 0x22, 1);
-        break;
-
-    case 6:
-        Serial.print("Station: ");
-        Serial.println(highByte(RESP[0]) | RESP[1]);
-        needCTS = true;
-        // Tune WB
-        //f = translateWB(162450);
-        // Tune FM
-        f = 8850;
-        ARGS[0] = 0x00; // always 0
-        ARGS[1] = (f & 0xff00) >> 8;
-        ARGS[2] = (f & 0x00ff);
-        //sendCommand("WB_TUNE_FREQ: 162.450", 0x50, 3);
-        ARGS[3] = 0x00; // automatically set the tuning cap
-        sendCommand("FM_TUNE_FREQ: 88.5", 0x20, 4);
-        break;
-
     case 7:
         // Check interupt status
         needCTS = true;
@@ -277,7 +273,7 @@ void executeStep()
         Serial.print("Waiting a few seconds");
         wait(5);
         Serial.println(" OK");
-        ready = true;
+        interruptReceived = true;
         break;
 
     case 10:
@@ -307,7 +303,7 @@ void executeStep()
         Serial.print("Waiting a few seconds");
         wait(5);
         Serial.println(" OK");
-        ready = true;
+        interruptReceived = true;
         step = 9;
         break;
 
@@ -444,4 +440,27 @@ void wait(int seconds)
         Serial.print('.');
         sleep(1000);
     }
+}
+
+
+
+void setup()
+{
+    // NOTE: if you're running on a 3.3v Arduino, you should double the baud rate
+    // at which you run the SoftSerial library, but do not double it in the Serial
+    // Monitor, because the lower voltage Arduino's only run at half the clock
+    // rate but doesn't know it, so the SoftSerial code assumes it's running at full
+    // speed, which screws up the timing.
+    Serial.begin(115200 << CLOCK_SHIFT);
+    Serial.println();
+    Serial.println();
+    Serial.println("OK");
+
+    prepareChip();
+
+    attachInterrupt(digitalPinToInterrupt(GPO2_INTERUPT_PIN), GPO2InteruptHandler, FALLING);
+
+    Wire.begin();
+
+    nextStep = step_powerUp;
 }
