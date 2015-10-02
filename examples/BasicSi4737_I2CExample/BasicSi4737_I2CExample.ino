@@ -6,11 +6,13 @@ Author:	Sean
 
 #include <Wire.h>
 
-// change this to 0 if running at 5v, 1 if running at 3.3v
 #define CLOCK_SHIFT_5V 0
 #define CLOCK_SHIFT_3_3V 1
 #define CLOCK_SHIFT CLOCK_SHIFT_3_3V
+
 #define USE_SOFTWARE_CLOCK
+
+#define MAX_NUM_ARGS 7
 
 #define GPO2_INTERUPT_PIN_OPT_1 2
 #define GPO2_INTERUPT_PIN_OPT_2 3
@@ -21,21 +23,6 @@ Author:	Sean
 #define SI4737_PIN_RESET A1
 #define CLOCK_PIN A2
 
-#define POWERUP_CTS_INT_EN 0x80
-#define POWERUP_GPO2_EN 0x40
-#define POWERUP_PATCH  0x20
-#define POWERUP_X_OSC_EN 0x10
-#define POWERUP_FUNC_FM_RCV 0x00
-#define POWERUP_FUNC_WB_RCV 0x03
-#define POWERUP_FUNC_QUERY_LIB_ID 0x0F
-
-#define POWERUP_OPMODE_RDS_ONLY 0x00
-#define POWERUP_OPMODE_ANALOG 0x05
-#define POWERUP_OPMODE_DIGITAL_ON_ANALOG_PINS 0x0B
-#define POWERUP_OPMODE_DIGITAL 0xB0
-
-
-byte ARGS[7] = { 0,0,0,0,0,0,0 };
 byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false;
@@ -47,7 +34,6 @@ void(*nextStep)(void);
 void prepareChip();
 void wait(int);
 void sleep(int);
-bool sendCommand(const char*, const byte, const size_t);
 void printBuffer(const char*, const size_t, const byte*, int = 16);
 void GPO2InteruptHandler();
 void getStatus();
@@ -72,6 +58,80 @@ void loop()
             (*currentStep)();
         }
     }
+}
+
+void advanceStep()
+{
+    if (!needSTC || STC)
+    {
+        currentStep = nextStep;
+        nextStep = 0;
+    }
+    else
+    {
+        sleep(1000);
+    }
+
+    needCTS = false;
+    CTS = false;
+    needSTC = false;
+    STC = false;
+    expResp = 0;
+}
+
+////////////////////////////////////////////////////////////
+// CHIP COMS
+////////////////////////////////////////////////////////////
+
+void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExpected, bool stcExpected, int arg0 = -1, int arg1 = -1, int arg2 = -1, int arg3 = -1, int arg4 = -1, int arg5 = -1, int arg6 = -1)
+{
+    needCTS = ctsExpected;
+    needSTC = stcExpected;
+    if (!needCTS && !needSTC)
+    {
+        interruptReceived = true;
+    }
+    expResp = responseLength;
+    static int args[MAX_NUM_ARGS];
+    static byte params[MAX_NUM_ARGS];
+    args[0] = arg0;
+    args[1] = arg1;
+    args[2] = arg2;
+    args[3] = arg3;
+    args[4] = arg4;
+    args[5] = arg5;
+    args[6] = arg6;
+
+    int numArgs = 0;
+    while (numArgs < MAX_NUM_ARGS && args[numArgs] >= 0)
+    {
+        params[numArgs] = args[numArgs];
+        ++numArgs;
+    }
+
+    Serial.print("CMD ");
+    printBuffer(name, numArgs, params);
+    Wire.beginTransmission(SI4737_BUS_ADDRESS);
+    Wire.write(cmd);
+    if (numArgs > 0)
+    {
+        Wire.write(params, numArgs);
+    }
+
+    byte status = Wire.endTransmission(false);
+
+    Serial.print("I2C status: ");
+    Serial.print(status);
+    Serial.print(" -> ");
+    switch (status)
+    {
+    case 0: Serial.print("OK"); break;
+    case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
+    case 2: Serial.print("ERR: received NACK on transmit of address."); break;
+    case 3: Serial.print("ERR: received NACK on transmit of data."); break;
+    default: Serial.print("ERR: unknown."); break;
+    }
+    Serial.println();
 }
 
 void getStatus()
@@ -125,34 +185,444 @@ void getStatus()
     }
 }
 
-void advanceStep()
+void printStation()
 {
-    if (!needSTC || STC)
-    {
-        currentStep = nextStep;
-        nextStep = 0;
-    }
-    else
-    {
-        sleep(1000);
-    }
-
-    needCTS = false;
-    CTS = false;
-    needSTC = false;
-    STC = false;
-    expResp = 0;
+    Serial.print("Station: ");
+    Serial.println(makeWord(RESP[1], RESP[2]));
+    Serial.print("Waiting a few seconds");
+    wait(5);
+    Serial.println(" OK");
+    interruptReceived = true;
 }
+
+////////////////////////////////////////////////////////////
+// CHIP API
+////////////////////////////////////////////////////////////
+
+/*
+Initiates the boot process to move the device from powerdown to powerup mode. The boot can occur from internal
+device memory or a system controller downloaded patch. To confirm that the patch is compatible with the internal
+device library revision, the library revision should be confirmed by issuing the POWER_UP command with
+FUNC = 15 (query library ID). The device returns the response, including the library revision, and then moves into
+powerdown mode. The device can then be placed in powerup mode by issuing the POWER_UP command with
+FUNC = 0 (FM Receive) and the patch may be applied (See Section "7.2. Powerup from a Component Patch" on
+page 216).
+
+The POWER_UP command configures the state of ROUT (pin 13, Si474x pin 15) and LOUT (pin 14, Si474x pin
+16) for analog audio mode and GPO2/INT (pin 18, Si474x pin 20) for interrupt operation. For the
+Si4705/21/31/35/37/39/84/85-B20, the POWER_UP command also configures the state of GPO3/DCLK (pin 17,
+Si474x pin 19), DFS (pin 16, Si474x pin 18), and DOUT (pin 15, Si474x pin 17) for digital audio mode. The
+command configures GPO2/INT interrupts (GPO2OEN) and CTS interrupts (CTSIEN). If both are enabled,
+GPO2/INT is driven high during normal operation and low for a minimum of 1 µs during the interrupt. The CTSIEN
+bit is duplicated in the GPO_IEN property. The command is complete when the CTS bit (and optional interrupt) is
+set.
+
+Note: To change function (e.g. FM RX to AM RX or FM RX to FM TX), issue POWER_DOWN command to stop current function;
+then, issue POWER_UP to start new function.
+
+Note: Delay at least 500 ms between powerup command and first tune command to wait for the oscillator to stabilize if
+XOSCEN is set and crystal is used as the RCLK.
+
+Available in: All
+
+Response Bytes: None (FUNC != QUERY_LIBRARY_ID), Seven (FUNC = QUERY_LIBRARY_ID)
+*/
+void powerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false, bool enableCTSInterrupt = true, bool enableGP02 = true, bool enableXOSC = false, bool enablePatch = false)
+{
+#define POWER_UP 0x01
+#define POWER_UP_CTS_INT_EN 0x80
+#define POWER_UP_GPO2_EN 0x40
+#define POWER_UP_PATCH  0x20
+#define POWER_UP_X_OSC_EN 0x10
+#define POWER_UP_FUNC_FM_RCV 0x00
+#define POWER_UP_FUNC_WB_RCV 0x03
+#define POWER_UP_FUNC_QUERY_LIB_ID 0x0F
+#define POWER_UP_OPMODE_RDS_ONLY 0x00
+#define POWER_UP_OPMODE_ANALOG 0x05
+#define POWER_UP_OPMODE_DIGITAL_ON_ANALOG_PINS 0x0B
+#define POWER_UP_OPMODE_DIGITAL 0xB0
+
+    byte options = 0, outputMode = 0;
+
+    if (enableCTSInterrupt) options |= POWER_UP_CTS_INT_EN;
+    if (enableGP02) options |= POWER_UP_GPO2_EN;
+    if (enablePatch) options |= POWER_UP_PATCH;
+    if (enableXOSC) options |= POWER_UP_X_OSC_EN;
+
+    if (analogOutput) outputMode |= POWER_UP_OPMODE_ANALOG;
+    if (digitalOutput) outputMode |= POWER_UP_OPMODE_DIGITAL;
+
+    transmitCommand(
+        "POWER_UP",
+        POWER_UP, 0, true, false,
+        options | funcMode,
+        outputMode);
+}
+
+/*
+Returns the part number, chip revision, firmware revision, patch revision and component revision numbers.The
+command is complete when the CTS bit(and optional interrupt) is set.This command may only be sent when in
+powerup mode.
+
+Available in : All
+
+Response bytes : Fifteen(Si4705 / 06 only), Eight(Si4704 / 2x / 3x / 4x)
+*/
+void getRevision(bool isSI4705or06 = false)
+{
+#define GET_REV 0x10
+
+    transmitCommand(
+        "GET_REV",
+        GET_REV, isSI4705or06 ? 15 : 8, true, false);
+}
+
+/*
+Moves the device from powerup to powerdown mode. The CTS bit (and optional interrupt) is set when it is safe to
+send the next command. This command may only be sent when in powerup mode. Note that only the POWER_UP
+command is accepted in powerdown mode. If the system controller writes a command other than POWER_UP
+when in powerdown mode, the device does not respond. The device will only respond when a POWER_UP
+command is written. GPO pins are powered down and not active during this state. For optimal power down
+current, GPO2 must be either internally driven low through GPIO_CTL command or externally driven low.
+
+Note: In FMRX component 1.0, a reset is required when the system controller writes a command other than POWER_UP
+when in powerdown mode.
+
+Note: The following describes the state of all the pins when in powerdown mode:
+GPIO1, GPIO2, and GPIO3 = 0
+ROUT, LOUT, DOUT, DFS = HiZ
+
+Available in: All
+*/
+void powerDown()
+{
+#define POWER_DOWN 0x11
+
+    transmitCommand(
+        "POWER_DOWN",
+        POWER_DOWN, 0, true, false);
+}
+
+/*
+Sets a property shown in Table 9, “FM/RDS Receiver Property Summary,” on page 56. The CTS bit (and optional
+interrupt) is set when it is safe to send the next command. This command may only be sent when in powerup
+mode. See Figure 29, “CTS and SET_PROPERTY Command Complete tCOMP Timing Model,” on page 226 and
+Table 46, “Command Timing Parameters for the FM Receiver,” on page 228.
+
+Available in: All
+*/
+void setProperty(const char* name, uint16_t propertyNumber, uint16_t propertyValue)
+{
+#define SET_PROPERTY 0x12
+
+    Serial.print("SET_PROPERTY: ");
+    transmitCommand(
+        name,
+        SET_PROPERTY, 0, false, false,
+        0x00, // always 0
+        highByte(propertyNumber), lowByte(propertyNumber),
+        highByte(propertyValue), lowByte(propertyValue));
+    // always delay 10ms after SET_PROPERTY. It has no CTS response,
+    // but the 10ms is guaranteed.
+    delay(10);
+}
+
+/*
+Gets a property as shown in AN332: Table 9, “FM/RDS Receiver Property Summary,” on page 56. The CTS bit (and
+optional interrupt) is set when it is safe to send the next command. This command may only be sent when in
+powerup mode.
+
+Available in: All
+
+Response bytes: Three
+*/
+void getProperty(const char* name, uint16_t propertyNumber)
+{
+#define GET_PROPERTY 0x13
+
+    Serial.print("GET_PROPERTY: ");
+    transmitCommand(name,
+        GET_PROPERTY, 3, true, false,
+        0x00, // always 0
+        highByte(propertyNumber), lowByte(propertyNumber));
+}
+
+/*
+Updates bits 6:0 of the status byte. This command should be called after any command that sets the STCINT,
+RDSINT, or RSQINT bits. When polling this command should be periodically called to monitor the STATUS byte,
+and when using interrupts, this command should be called after the interrupt is set to update the STATUS byte. The
+CTS bit (and optional interrupt) is set when it is safe to send the next command. This command may only be set
+when in powerup mode.
+
+Available in: All
+*/
+void getInterruptStatus()
+{
+#define GET_INT_STATUS 0x14
+
+    transmitCommand(
+        "GET_INT_STATUS",
+        GET_INT_STATUS, 0, true, true);
+}
+
+/*
+Sets the FM Receive to tune a frequency between 64 and 108 MHz in 10 kHz units. The CTS bit (and optional
+interrupt) is set when it is safe to send the next command. The ERR bit (and optional interrupt) is set if an invalid
+argument is sent. Note that only a single interrupt occurs if both the CTS and ERR bits are set. The optional STC
+interrupt is set when the command completes. The STCINT bit is set only after the GET_INT_STATUS command is
+called. This command may only be sent when in powerup mode. The command clears the STC bit if it is already
+set. See Figure 28, “CTS and STC Timing Model,” on page 226 and Table 46, “Command Timing Parameters for
+the FM Receiver,” on page 228.
+
+FM: LO frequency is 128 kHz above RF for RF frequencies < 90 MHz and 128 kHz below RF for RF frequencies >
+90 MHz. For example, LO frequency is 80.128 MHz when tuning to 80.00 MHz.
+
+Note: For FMRX components 2.0 or earlier, tuning range is 76–108 MHz.
+
+Note: Fast bit is supported in FMRX components 4.0 or later.
+
+Note: Freeze bit is supported in FMRX components 4.0 or later.
+
+Available in: All
+*/
+void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0)
+{
+#define FM_TUNE_FREQ 0x20
+#define FM_TUNE_FREQ_FREEZE 0x02
+#define FM_TUNE_FREQ_FAST 0x01
+
+    byte options = 0;
+    if (freezeMetrics) options |= FM_TUNE_FREQ_FREEZE;
+    if (fastTune) options |= FM_TUNE_FREQ_FAST;
+    transmitCommand(
+        "FM_TUNE_FREQ: 88.5",
+        FM_TUNE_FREQ, 0, true, false,
+        options,
+        highByte(f),
+        lowByte(f),
+        antennaCapValue);
+}
+
+/*
+Begins searching for a valid frequency. Clears any pending STCINT or RSQINT interrupt status. The CTS bit (and
+optional interrupt) is set when it is safe to send the next command. RSQINT status is only cleared by the RSQ
+status command when the INTACK bit is set. The ERR bit (and optional interrupt) is set if an invalid argument is
+sent. Note that only a single interrupt occurs if both the CTS and ERR bits are set. The optional STC interrupt is set
+when the command completes. The STCINT bit is set only after the GET_INT_STATUS command is called. This
+command may only be sent when in powerup mode. The command clears the STCINT bit if it is already set. See
+Figure 28, “CTS and STC Timing Model,” on page 226 and Table 46, “Command Timing Parameters for the FM
+Receiver,” on page 228.
+
+Available in: All
+*/
+void seekFM(bool seekUp, bool wrap)
+{
+#define FM_SEEK_START 0x21
+#define FM_SEEK_START_UP 0x08
+#define FM_SEEK_START_WRAP 0x04
+
+    byte options = 0;
+    if (seekUp) options |= FM_SEEK_START_UP;
+    if (wrap)options |= FM_SEEK_START_WRAP;
+    transmitCommand(
+        "FM_SEEK_START",
+        FM_SEEK_START, 0, true, false,
+        options);
+}
+
+/*
+Returns the status of FM_TUNE_FREQ or FM_SEEK_START commands. The command returns the current
+frequency, RSSI, SNR, multipath, and the antenna tuning capacitance value (0-191). The command clears the
+STCINT interrupt bit when INTACK bit of ARG1 is set. The CTS bit (and optional interrupt) is set when it is safe to
+send the next command. This command may only be sent when in powerup mode.
+
+Available in: All
+
+Response bytes: Seven
+*/
+void getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
+{
+#define FM_TUNE_STATUS 0x22
+#define FM_TUNE_STATUS_CANCEL 0x02
+#define FM_TUNE_STATUS_INTACK 0x01
+
+    byte options = 0;
+    if (cancelSeek) options |= FM_TUNE_STATUS_CANCEL;
+    if (ackSTC) options |= FM_TUNE_STATUS_INTACK;
+    transmitCommand(
+        "FM_TUNE_STATUS",
+        FM_TUNE_STATUS, 7, true, false,
+        options);
+}
+
+/*
+Returns status information about the received signal quality. The commands returns the RSSI, SNR, frequency
+offset, and stereo blend percentage. It also indicates valid channel (VALID), soft mute engagement (SMUTE), and
+AFC rail status (AFCRL). This command can be used to check if the received signal is above the RSSI high
+threshold as reported by RSSIHINT, or below the RSSI low threshold as reported by RSSILINT. It can also be used
+to check if the signal is above the SNR high threshold as reported by SNRHINT, or below the SNR low threshold as
+reported by SNRLINT. For the Si4706/4x, it can be used to check if the detected multipath is above the multipath
+high threshold as reported by MULTHINT, or below the multipath low threshold as reported by MULTLINT. If the
+PILOT indicator is set, it can also check whether the blend has crossed a threshold as indicated by BLENDINT.
+The command clears the RSQINT, BLENDINT, SNRHINT, SNRLINT, RSSIHINT, RSSILINT, MULTHINT, and
+MULTLINT interrupt bits when INTACK bit of ARG1 is set. The CTS bit (and optional interrupt) is set when it is safe
+to send the next command. This command may only be sent when in powerup mode.
+
+Available in: All
+
+Response bytes: Seven
+*/
+
+void getFMRSQStatus(bool ackInterrupts = true)
+{
+#define FM_RSQ_STATUS 0x23
+#define FM_RSQ_STATUS_INTACK 0x01
+
+    byte options = 0;
+    if (ackInterrupts) options |= FM_RSQ_STATUS_INTACK;
+    transmitCommand(
+        "FM_RSQ_STATUS",
+        FM_RSQ_STATUS, 7, true, false,
+        options);
+}
+
+/*
+Returns RDS information for current channel and reads an entry from the RDS FIFO. RDS information includes
+synch status, FIFO status, group data (blocks A, B, C, and D), and block errors corrected. This command clears
+the RDSINT interrupt bit when INTACK bit in ARG1 is set and, if MTFIFO is set, the entire RDS receive FIFO is
+cleared (FIFO is always cleared during FM_TUNE_FREQ or FM_SEEK_START). The CTS bit (and optional
+interrupt) is set when it is safe to send the next command. This command may only be sent when in power up
+mode. The FIFO size is 25 groups for FMRX component 2.0 or later, and 14 for FMRX component 1.0.
+
+Notes:
+1. FM_RDS_STATUS is supported in FMRX component 2.0 or later.
+2. MTFIFO is not supported in FMRX component 2.0.
+
+Available in: Si4705/06, Si4721, Si474x, Si4731/35/37/39, Si4785
+
+Response bytes: Twelve
+*/
+
+void getFMRDSStatus(bool statusOnly = false, bool emptyFIFO = false, bool ackRDSInterrupt = true)
+{
+#define FM_RDS_STATUS 0x24
+#define FM_RDS_STATUS_STATUSONLY 0x04
+#define FM_RDS_STATUS_MTFIFO 0x02
+#define FM_RDS_STATUS_INTACK 0x01
+
+    byte options = 0;
+    if (statusOnly) options |= FM_RDS_STATUS_STATUSONLY;
+    if (emptyFIFO) options |= FM_RDS_STATUS_MTFIFO;
+    if (ackRDSInterrupt) options |= FM_RDS_STATUS_INTACK;
+}
+
+/*
+Returns the AGC setting of the device. The command returns whether the AGC is enabled or disabled and it
+returns the LNA Gain index. This command may only be sent when in powerup mode.
+
+Available in: All
+
+Response bytes: Two
+*/
+void getFMAGCStatus()
+{
+#define FM_AGC_STATUS 0x27
+
+    transmitCommand(
+        "FM_AGC_STATUS",
+        FM_AGC_STATUS, 2, true, false);
+}
+
+/*
+Overrides AGC setting by disabling the AGC and forcing the LNA to have a certain gain that ranges between 0
+(minimum attenuation) and 26 (maximum attenuation). This command may only be sent when in powerup mode.
+
+Available in: All
+*/
+void setFMAGCOverride(bool disableRFAGC, byte LNAGainIndex)
+{
+#define FM_AGC_OVERRIDE 0x28
+#define FM_AGC_OVERRIDE_RFAGCDIS 0x01
+
+    byte options = 0;
+    if (disableRFAGC) options |= FM_AGC_OVERRIDE_RFAGCDIS;
+    transmitCommand(
+        "FM_AGC_OVERRIDE",
+        FM_AGC_OVERRIDE, 0, true, false,
+        options,
+        LNAGainIndex);
+}
+
+/*
+Enables output for GPO1, 2, and 3. GPO1, 2, and 3 can be configured for output (Hi-Z or active drive) by setting
+the GPO1OEN, GPO2OEN, and GPO3OEN bit. The state (high or low) of GPO1, 2, and 3 is set with the
+GPIO_SET command. To avoid excessive current consumption due to oscillation, GPO pins should not be left in a
+high impedance state. The CTS bit (and optional interrupt) is set when it is safe to send the next command. This
+command may only be sent when in powerup mode. The default is all GPO pins set for high impedance.
+
+Notes:
+1. GPIO_CTL is fully supported in FMRX component 2.0 or later. Only bit GPO3OEN is supported in FMRX component 1.0.
+2. The use of GPO2 as an interrupt pin and/or the use of GPO3 as DCLK digital clock input will override this GPIO_CTL
+function for GPO2 and/or GPO3 respectively.
+
+Available in: All except Si4710-A10
+*/
+void setGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
+{
+#define GPIO_CTL 0x80
+#define GPIO_CTL_GPO3OEN 0x08
+#define GPIO_CTL_GPO2OEN 0x04
+#define GPIO_CTL_GPO1OEN 0x02
+
+    byte options = 0;
+    if (enableGPIO1) options |= GPIO_CTL_GPO1OEN;
+    if (enableGPIO2) options |= GPIO_CTL_GPO2OEN;
+    if (enableGPIO3) options |= GPIO_CTL_GPO3OEN;
+
+    transmitCommand(
+        "GPIO_CTL",
+        GPIO_CTL, 0, true, false,
+        options);
+}
+
+/*
+Sets the output level (high or low) for GPO1, 2, and 3. GPO1, 2, and 3 can be configured for output by setting the
+GPO1OEN, GPO2OEN, and GPO3OEN bit in the GPIO_CTL command. To avoid excessive current consumption
+due to oscillation, GPO pins should not be left in a high impedance state. The CTS bit (and optional interrupt) is set
+when it is safe to send the next command. This property may only be set or read when in powerup mode. The
+default is all GPO pins set for high impedance.
+
+Note: GPIO_SET is fully-supported in FMRX component 2.0 or later. Only bit GPO3LEVEL is supported in FMRX component
+1.0.
+
+Available in: All except Si4710-A10
+*/
+void setGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
+{
+#define GPIO_SET 0x81
+#define GPIO_SET_GPO3LEVEL 0x08
+#define GPIO_SET_GPO2LEVEL 0x04
+#define GPIO_SET_GPO1LEVEL 0x02
+
+    byte options = 0;
+    if (highGPIO1) options |= GPIO_SET_GPO1LEVEL;
+    if (highGPIO2) options |= GPIO_SET_GPO2LEVEL;
+    if (highGPIO3) options |= GPIO_SET_GPO3LEVEL;
+
+    transmitCommand(
+        "GPIO_SET",
+        GPIO_SET, 0, true, false,
+        options);
+}
+
+
+////////////////////////////////////////////////////////////
+// FINITE STATE MACHINE
+////////////////////////////////////////////////////////////
 
 void step_powerUp()
 {
-    needCTS = true;
-    ARGS[0] = POWERUP_CTS_INT_EN | POWERUP_GPO2_EN | POWERUP_FUNC_FM_RCV;
-#ifndef USE_SOFTWARE_CLOCK
-    ARGS[0] |= POWERUP_X_OSC_EN;
-#endif
-    ARGS[1] = POWERUP_OPMODE_ANALOG;
-    sendCommand("POWER_UP", 0x01, 2);
+    powerUp(POWER_UP_FUNC_FM_RCV);
     nextStep = step_enableGPIO;
 }
 
@@ -160,81 +630,35 @@ void step_powerUp()
 // due to oscillation.
 void step_enableGPIO()
 {
-    needCTS = true;
-    ARGS[0] = 0x0E;
-    sendCommand("GPIO_CTL", 0x80, 1);
+    transmitCommand(
+        "GPIO_CTL",
+        0x80, 0, true, false,
+        GPIO_CTL_GPO3OEN | GPIO_CTL_GPO2OEN | GPIO_CTL_GPO1OEN);
     nextStep = step_setInterruptSource;
 }
 
 void step_setInterruptSource()
 {
-    ARGS[0] = 0x00; // always 0
-    ARGS[1] = 0x00;
-    ARGS[2] = 0x01;
-    ARGS[3] = 0x00;
-    ARGS[4] = 0xC9;
-    sendCommand("SET_PROPERTY: GPO_IEN", 0x12, 5);
-    // always delay 10ms after SET_PROPERTY. It has no CTS response,
-    // but the 10ms is guaranteed.
-    delay(10);
-    interruptReceived = true;
+    setProperty("GPO_IEN", 0x0001, 0x00C9);
     nextStep = step_setReferenceClockPrescale;
 }
 
 void step_setReferenceClockPrescale()
 {
-    ARGS[0] = 0x00; // always 0
-    ARGS[1] = 0x02;
-    ARGS[2] = 0x02;
-    ARGS[3] = 0x00;
-    ARGS[4] = 0x01;
-    sendCommand("SET_PROPERTY: REFCLK_PRESCALE", 0x12, 5);
-    // always delay 10ms after SET_PROPERTY. It has no CTS response,
-    // but the 10ms is guaranteed.
-    delay(10);
-    interruptReceived = true;
+    setProperty("REFCLK_PRESCALE", 0x0202, 0x0001);
     nextStep = step_setReferenceClockFrequency;
 }
 
 void step_setReferenceClockFrequency()
 {
-    ARGS[0] = 0x00; // always 0
-    ARGS[1] = 0x02;
-    ARGS[2] = 0x01;
-    ARGS[3] = (31250 & 0xFF00) >> 8;
-    ARGS[4] = (31250 & 0xFF);
-    sendCommand("SET_PROPERTY: REFCLK_FREQ", 0x12, 5);
-    // always delay 10ms after SET_PROPERTY. It has no CTS response,
-    // but the 10ms is guaranteed.
-    delay(10);
-    interruptReceived = true;
+    setProperty("REFCLK_FREQ", 0x0201, 31250);
     nextStep = step_getCurrentTuning1;
-}
-
-void getCurrentTuning() 
-{
-    needCTS = true;
-    ARGS[0] = 0x01;
-    //expResp = 5;
-    //sendCommand("WB_TUNE_STATUS", 0x52, 1);
-    expResp = 7;
-    sendCommand("FM_TUNE_STATUS", 0x22, 1);
 }
 
 void step_getCurrentTuning1()
 {
-    getCurrentTuning();
+    getFMTuneStatus();
     nextStep = step_printStation1;
-}
-
-void printStation()
-{
-    Serial.print("Station: ");
-    Serial.println((((int)RESP[1]) << 8) | RESP[2]);
-    Serial.print("Waiting a few seconds");
-    wait(5);
-    Serial.println(" OK");
-    interruptReceived = true;
 }
 
 void step_printStation1()
@@ -249,66 +673,37 @@ void step_printStation2()
     nextStep = step_seekToStation;
 }
 
-void tuneToStation()
-{
-    needCTS = true;
-    // Tune WB
-    //int f = translateWB(162450);
-    // Tune FM
-    int f = 8850;
-    ARGS[0] = 0x00; // always 0
-    ARGS[1] = (f & 0xff00) >> 8;
-    ARGS[2] = (f & 0x00ff);
-    //sendCommand("WB_TUNE_FREQ: 162.450", 0x50, 3);
-    ARGS[3] = 0x00; // automatically set the tuning cap
-    sendCommand("FM_TUNE_FREQ: 88.5", 0x20, 4);
-}
-
 void step_tuneToStation1()
 {
-    tuneToStation();
-    nextStep = step_checkInterruptStatus1;
+    setFMTuneFrequency(8850);
+    nextStep = step_getInterruptStatus1;
 }
 
-void checkInterruptStatus()
+void step_getInterruptStatus1()
 {
-    needCTS = true;
-    needSTC = true;
-    sendCommand("GET_INT_STATUS", 0x14, 0);
-}
-
-void step_checkInterruptStatus1()
-{
-    checkInterruptStatus();
+    getInterruptStatus();
     nextStep = step_getTuneStatus1;
 }
 
-void step_checkInterruptStatus2()
+void step_getInterruptStatus2()
 {
-    checkInterruptStatus();
+    getInterruptStatus();
     nextStep = step_getTuneStatus1;
-}
-
-void getTuneStatus()
-{
-    needCTS = true;
-    ARGS[0] = 0x01;
-    expResp = 7;
-    sendCommand("FM_TUNE_STATUS", 0x22, 1);
 }
 
 void step_getTuneStatus1()
 {
-    getTuneStatus();
+    getFMTuneStatus();
     nextStep = step_printStation2;
 }
 
 void step_seekToStation()
 {
-    needCTS = true;
-    ARGS[0] = 0x0C;
-    sendCommand("FM_SEEK_START: UP", 0x21, 1);
-    nextStep = step_checkInterruptStatus2;
+    transmitCommand(
+        "FM_SEEK_START: UP",
+        0x21, 0, true, false,
+        0x0C);
+    nextStep = step_getInterruptStatus2;
 }
 
 void printBuffer(const char* name, const size_t size, const byte* buffer, int radix)
@@ -339,35 +734,6 @@ void printBuffer(const char* name, const size_t size, const byte* buffer, int ra
         }
     }
     Serial.print(')');
-}
-
-bool sendCommand(const char* name, const byte cmd, const size_t numArgs)
-{
-    Serial.print("CMD ");
-    printBuffer(name, numArgs, ARGS);
-    Wire.beginTransmission(SI4737_BUS_ADDRESS);
-    Wire.write(cmd);
-    if (numArgs > 0)
-    {
-        Wire.write(ARGS, numArgs);
-    }
-
-    byte status = Wire.endTransmission(false);
-
-#ifdef DEBUG_I2C
-    Serial.print("I2C status: ");
-    Serial.print(status);
-    Serial.print(" -> ");
-    switch (status)
-    {
-    case 0: Serial.print("OK"); break;
-    case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
-    case 2: Serial.print("ERR: received NACK on transmit of address."); break;
-    case 3: Serial.print("ERR: received NACK on transmit of data."); break;
-    default: Serial.print("ERR: unknown."); break;
-    }
-    Serial.println();
-#endif
 }
 
 void prepareChip()
