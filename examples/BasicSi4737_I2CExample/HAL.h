@@ -27,7 +27,6 @@
 #define POWER_UP_FUNC_WB_RCV 0x03
 #define POWER_UP_FUNC_QUERY_LIB_ID 0x0F
 
-void printBuffer(const char* name, const size_t size, const byte* buffer, int radix = 16);
 void prepareChip();
 void sleep(int millis);
 void wait(int seconds);

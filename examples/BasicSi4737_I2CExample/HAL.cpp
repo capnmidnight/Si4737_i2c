@@ -25,6 +25,36 @@ void waitForInterrupt()
     interruptReceived = false;
 }
 
+void printBuffer(const char* name, const size_t size, const byte* buffer, int radix = 16)
+{
+    Serial.print(name);
+    Serial.print('(');
+    if (size > 0)
+    {
+        for (int i = 0; i < size; ++i)
+        {
+            if (radix == 16)
+            {
+                Serial.print("0x");
+                if (buffer[i] < radix)
+                {
+                    Serial.print(0);
+                }
+            }
+            Serial.print(buffer[i], radix);
+            if (radix == 2)
+            {
+                Serial.print('b');
+            }
+            if (i < (size - 1))
+            {
+                Serial.print(", ");
+            }
+        }
+    }
+    Serial.print(')');
+}
+
 ////////////////////////////////////////////////////////////
 // CHIP COMS
 ////////////////////////////////////////////////////////////
@@ -443,36 +473,6 @@ void setHardMute(bool muteLeft, bool muteRight)
     if (muteRight) value |= RX_HARD_MUTE_RIGHT;
 
     setProperty("RX_HARD_MUTE", RX_HARD_MUTE, value);
-}
-
-void printBuffer(const char* name, const size_t size, const byte* buffer, int radix)
-{
-    Serial.print(name);
-    Serial.print('(');
-    if (size > 0)
-    {
-        for (int i = 0; i < size; ++i)
-        {
-            if (radix == 16)
-            {
-                Serial.print("0x");
-                if (buffer[i] < radix)
-                {
-                    Serial.print(0);
-                }
-            }
-            Serial.print(buffer[i], radix);
-            if (radix == 2)
-            {
-                Serial.print('b');
-            }
-            if (i < (size - 1))
-            {
-                Serial.print(", ");
-            }
-        }
-    }
-    Serial.print(')');
 }
 
 void prepareChip()
