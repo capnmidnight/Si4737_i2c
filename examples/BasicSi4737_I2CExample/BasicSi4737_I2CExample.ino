@@ -196,7 +196,7 @@ void printStation()
 }
 
 ////////////////////////////////////////////////////////////
-// CHIP API
+// CHIP API COMMANDS
 ////////////////////////////////////////////////////////////
 
 /*
@@ -394,6 +394,7 @@ void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false
     byte options = 0;
     if (freezeMetrics) options |= FM_TUNE_FREQ_FREEZE;
     if (fastTune) options |= FM_TUNE_FREQ_FAST;
+
     transmitCommand(
         "FM_TUNE_FREQ: 88.5",
         FM_TUNE_FREQ, 0, true, false,
@@ -424,6 +425,7 @@ void seekFM(bool seekUp, bool wrap)
     byte options = 0;
     if (seekUp) options |= FM_SEEK_START_UP;
     if (wrap)options |= FM_SEEK_START_WRAP;
+
     transmitCommand(
         "FM_SEEK_START",
         FM_SEEK_START, 0, true, false,
@@ -449,6 +451,7 @@ void getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true)
     byte options = 0;
     if (cancelSeek) options |= FM_TUNE_STATUS_CANCEL;
     if (ackSTC) options |= FM_TUNE_STATUS_INTACK;
+
     transmitCommand(
         "FM_TUNE_STATUS",
         FM_TUNE_STATUS, 7, true, false,
@@ -480,6 +483,7 @@ void getFMRSQStatus(bool ackInterrupts = true)
 
     byte options = 0;
     if (ackInterrupts) options |= FM_RSQ_STATUS_INTACK;
+
     transmitCommand(
         "FM_RSQ_STATUS",
         FM_RSQ_STATUS, 7, true, false,
@@ -514,6 +518,11 @@ void getFMRDSStatus(bool statusOnly = false, bool emptyFIFO = false, bool ackRDS
     if (statusOnly) options |= FM_RDS_STATUS_STATUSONLY;
     if (emptyFIFO) options |= FM_RDS_STATUS_MTFIFO;
     if (ackRDSInterrupt) options |= FM_RDS_STATUS_INTACK;
+
+    transmitCommand(
+        "FM_RDS_STATUS", 
+        FM_RDS_STATUS, 12, true, false, 
+        options);
 }
 
 /*
@@ -546,6 +555,7 @@ void setFMAGCOverride(bool disableRFAGC, byte LNAGainIndex)
 
     byte options = 0;
     if (disableRFAGC) options |= FM_AGC_OVERRIDE_RFAGCDIS;
+
     transmitCommand(
         "FM_AGC_OVERRIDE",
         FM_AGC_OVERRIDE, 0, true, false,
@@ -615,6 +625,191 @@ void setGPIOLevel(bool highGPIO1, bool highGPIO2, bool highGPIO3)
         options);
 }
 
+////////////////////////////////////////////////////////////
+// CHIP API PROPERTIES
+////////////////////////////////////////////////////////////
+
+/*
+Configures the sources for the GPO2/INT interrupt pin. Valid sources are the lower 8 bits of the STATUS byte,
+including CTS, ERR, RSQINT, RDSINT (Si4705/21/31/35/37/39/41/43/45/85 only), and STCINT bits. The
+corresponding bit is set before the interrupt occurs. The CTS bit (and optional interrupt) is set when it is safe to
+send the next command. The CTS interrupt enable (CTSIEN) can be set with this property and the POWER_UP
+command. The state of the CTSIEN bit set during the POWER_UP command can be read by reading this property
+and modified by writing this property. This property may only be set or read when in powerup mode.
+
+Errata:RSQIEN is non-functional on FMRX component 2.0.
+
+Available in: All
+
+Default: 0x0000
+*/
+void setGPIOInterruptSources(bool repeatRSQ, bool repeatRDS, bool repeatSTC, bool enableCTS, bool enableERR, bool enableRSQ, bool enableRDS, bool enableSTC)
+{
+#define GPIO_IEN 0x0001
+#define GPIO_IEN_RSQREP 0x0800
+#define GPIO_IEN_RDSREP 0x0400
+#define GPIO_IEN_STCREP 0x0100
+#define GPIO_IEN_CTSIEN 0x0080
+#define GPIO_IEN_ERRIEN 0x0040
+#define GPIO_IEN_RSQIEN 0x0008
+#define GPIO_IEN_RDSIEN 0x0004
+#define GPIO_IEN_STCIEN 0x0001
+
+    uint16_t value = 0;
+    if (repeatRSQ) value |= GPIO_IEN_RSQREP;
+    if (repeatRDS) value |= GPIO_IEN_RSQREP;
+    if (repeatSTC) value |= GPIO_IEN_STCREP;
+    if (enableCTS) value |= GPIO_IEN_CTSIEN;
+    if (enableERR) value |= GPIO_IEN_ERRIEN;
+    if (enableRSQ) value |= GPIO_IEN_RSQIEN;
+    if (enableRDS) value |= GPIO_IEN_RDSIEN;
+    if (enableSTC) value |= GPIO_IEN_STCIEN;
+
+    setProperty("GPIO_IEN", GPIO_IEN, value);
+}
+
+/*
+Configures the digital audio output format. Configuration options include DCLK edge, data format, force mono, and
+sample precision.
+
+Available in: Si4705/06, Si4721/31/35/37/39, Si4730/34/36/38-D60 and later, Si4741/43/45, Si4784/85
+
+Default: 0x0000
+
+Note: DIGITAL_OUTPUT_FORMAT is supported in FM receive component 2.0 or later.
+*/
+void setDigitalOutputFormat(bool dclkFallingEdge, uint16_t mode, bool forceMono, uint16_t samplePrecisionMode)
+{
+#define DIGITAL_OUTPUT_FORMAT 0x0102
+#define DIGITAL_OUTPUT_FORMAT_OFALL_RISING 0x0000
+#define DIGITAL_OUTPUT_FORMAT_OFALL_FALLING 0x0080
+#define DIGITAL_OUTPUT_FORMAT_MODE_I2S 0x0000
+#define DIGITAL_OUTPUT_FORMAT_MODE_LEFT_JUSTIFIED 0x0030
+#define DIGITAL_OUTPUT_FORMAT_MODE_MSB_AT_2ND_DCLK 0x0040
+#define DIGITAL_OUTPUT_FORMAT_MODE_MSB_AT_1ST_DCLK 0x0060
+#define DIGITAL_OUTPUT_FORMAT_OMONO_USE_STEREO_BLEND 0x0000
+#define DIGITAL_OUTPUT_FORMAT_OMONO_FORCE_MONO 0x0008
+#define DIGITAL_OUTPUT_FORMAT_OSIZE_16 0x0000
+#define DIGITAL_OUTPUT_FORMAT_OSIZE_20 0x0001
+#define DIGITAL_OUTPUT_FORMAT_OSIZE_24 0x0002
+#define DIGITAL_OUTPUT_FORMAT_OSIZE_8 0x0003
+
+    uint16_t value = mode | samplePrecisionMode;
+    if (dclkFallingEdge) value |= DIGITAL_OUTPUT_FORMAT_OFALL_FALLING;
+    if (forceMono) value |= DIGITAL_OUTPUT_FORMAT_OMONO_FORCE_MONO;
+
+    setProperty("DIGITAL_OUTPUT_FORMAT", DIGITAL_OUTPUT_FORMAT, value);
+}
+
+/*
+Enables digital audio output and configures digital audio output sample rate in samples per second (sps). When
+DOSR[15:0] is 0, digital audio output is disabled. The over-sampling rate must be set in order to satisfy a minimum
+DCLK of 1 MHz. To enable digital audio output, program DOSR[15:0] with the sample rate in samples per second.
+The system controller must establish DCLK and DFS prior to enabling the digital audio output else the
+device will not respond and will require reset. The sample rate must be set to 0 before the DCLK/DFS is
+removed. FM_TUNE_FREQ command must be sent after the POWER_UP command to start the internal
+clocking before setting this property.
+
+Note: DIGITAL_OUPTUT_SAMPLE_RATE is supported in FM receive component 2.0 or later.
+
+Available in: Si4705/06, Si4721/31/35/37/39, Si4730/34/36/38-D60 and later, Si4741/43/45, Si4784/85
+
+Default: 0x0000 (digital audio output disabled)
+
+Units: sps
+
+Range: 32–48 ksps, 0 to disable digital audio output
+*/
+void setDigitalAudioSampleRate(uint16_t value) 
+{
+#define DIGITAL_AUDIO_SAMPLE_RATE 0x0104
+
+    setProperty("DIGITAL_AUDIO_SAMPLE_RATE", DIGITAL_AUDIO_SAMPLE_RATE, value);
+}
+
+/*
+Sets the frequency of the REFCLK from the output of the prescaler. The REFCLK range is 31130 to 34406 Hz
+(32768 ±5% Hz) in 1 Hz steps, or 0 (to disable AFC). For example, an RCLK of 13 MHz would require a prescaler
+value of 400 to divide it to 32500 Hz REFCLK. The reference clock frequency property would then need to be set to
+32500 Hz. RCLK frequencies between 31130 Hz and 40 MHz are supported, however, there are gaps in frequency
+coverage for prescaler values ranging from 1 to 10, or frequencies up to 311300 Hz
+*/
+void setReferenceClockFrequency(uint16_t value)
+{
+#define REFCLK_FREQ 0x0201
+
+    setProperty("REFCLK_FREQ", REFCLK_FREQ, value);
+}
+
+/*
+Sets the number used by the prescaler to divide the external RCLK down to the internal REFCLK. The range may
+be between 1 and 4095 in 1 unit steps. For example, an RCLK of 13 MHz would require a prescaler value of 400 to
+divide it to 32500 Hz. The reference clock frequency property would then need to be set to 32500 Hz. The RCLK
+must be valid 10 ns before sending and 20 ns after completing the AM_TUNE_FREQ and AM_SEEK_START
+commands. In addition, the RCLK must be valid at all times for proper AFC operation. The RCLK may be removed
+or reconfigured at other times. The CTS bit (and optional interrupt) is set when it is safe to send the next command.
+This property may only be set or read when in powerup mode. The default is 1.
+
+Available in: All
+
+Default: 0x0001
+
+Step: 1
+
+Range: 1–4095
+*/
+void setReferenceClockPrescale(uint16_t value, bool useDCLK = false)
+{
+#define REFCLK_PRESCALE 0x0202
+#define REFCLK_PRESCALE_RCLKSEL_RCLK 0x0000
+#define REFCLK_PRESCALE_RCLKSEL_DCLK 0x1000
+
+    if (useDCLK) value |= REFCLK_PRESCALE_RCLKSEL_DCLK;
+
+    setProperty("REFCLK_PRESCALE", REFCLK_FREQ, value);
+}
+
+
+/*
+Sets the audio output volume. The CTS bit (and optional interrupt) is set when it is safe to send the next command.
+This property may only be set or read when in powerup mode. The default is 63.
+
+Available in: All except Si4749
+
+Default: 0x003F
+
+Step: 1
+
+Range: 0–63
+*/
+void setVolume(byte value) 
+{
+#define RX_VOLUME 0x4000
+
+    setProperty("RX_VOLUME", RX_VOLUME, value);
+}
+
+/*
+Mutes the audio output. L and R audio outputs may be muted independently. The CTS bit (and optional interrupt) is
+set when it is safe to send the next command. This property may only be set or read when in powerup mode. The
+default is unmute (0x0000).
+
+Available in: All except Si4749
+
+Default: 0x0000
+*/
+void setHardMute(bool muteLeft, bool muteRight)
+{
+#define RX_HARD_MUTE 0x4001
+#define RX_HARD_MUTE_LEFT 0x0002
+#define RX_HARD_MUTE_RIGHT 0x0001
+
+    byte value = 0;
+    if (muteLeft) value |= RX_HARD_MUTE_LEFT;
+    if (muteRight) value |= RX_HARD_MUTE_RIGHT;
+
+    setProperty("RX_HARD_MUTE", RX_HARD_MUTE, value);
+}
 
 ////////////////////////////////////////////////////////////
 // FINITE STATE MACHINE
@@ -630,28 +825,25 @@ void step_powerUp()
 // due to oscillation.
 void step_enableGPIO()
 {
-    transmitCommand(
-        "GPIO_CTL",
-        0x80, 0, true, false,
-        GPIO_CTL_GPO3OEN | GPIO_CTL_GPO2OEN | GPIO_CTL_GPO1OEN);
+    setGPIOModes(true, true, true);
     nextStep = step_setInterruptSource;
 }
 
 void step_setInterruptSource()
 {
-    setProperty("GPO_IEN", 0x0001, 0x00C9);
+    setGPIOInterruptSources(false, false, false, true, true, true, false, true);
     nextStep = step_setReferenceClockPrescale;
 }
 
 void step_setReferenceClockPrescale()
 {
-    setProperty("REFCLK_PRESCALE", 0x0202, 0x0001);
+    setReferenceClockPrescale(1);
     nextStep = step_setReferenceClockFrequency;
 }
 
 void step_setReferenceClockFrequency()
 {
-    setProperty("REFCLK_FREQ", 0x0201, 31250);
+    setReferenceClockFrequency(31250);
     nextStep = step_getCurrentTuning1;
 }
 
@@ -699,10 +891,7 @@ void step_getTuneStatus1()
 
 void step_seekToStation()
 {
-    transmitCommand(
-        "FM_SEEK_START: UP",
-        0x21, 0, true, false,
-        0x0C);
+    seekFM(true, true);
     nextStep = step_getInterruptStatus2;
 }
 
