@@ -5,11 +5,31 @@
 #include "HAL.h"
 #include <Wire.h>
 
-bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false;
-int expResp = 0, clockPinState = LOW;
+bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false, ERR = false;
+int expResp = 0;
+uint8_t clockPinState = LOW;
 
 byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
+
+uint16_t translateWB(uint16_t wb)
+{
+    return 64960 + (wb - 162400) / 25;
+}
+
+void sleep(uint16_t millis)
+{
+    delay(millis >> CLOCK_SHIFT);
+}
+
+void wait(uint16_t seconds)
+{
+    for (uint16_t i = 0; i < seconds; ++i)
+    {
+        Serial.print('.');
+        sleep(1000);
+    }
+}
 
 void GPO2InteruptHandler()
 {
@@ -31,7 +51,7 @@ void printBuffer(const char* name, const size_t size, const byte* buffer, int ra
     Serial.print('(');
     if (size > 0)
     {
-        for (int i = 0; i < size; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             if (radix == 16)
             {
@@ -63,6 +83,7 @@ void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExp
 {
     CTS = false;
     STC = false;
+    ERR = false;
     needCTS = ctsExpected;
     needSTC = stcExpected;
     expResp = responseLength;
@@ -76,7 +97,7 @@ void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExp
     args[5] = arg5;
     args[6] = arg6;
 
-    int numArgs = 0;
+    size_t numArgs = 0;
     while (numArgs < MAX_NUM_ARGS && args[numArgs] >= 0)
     {
         params[numArgs] = args[numArgs];
@@ -124,31 +145,31 @@ void getStatus()
         if (needStatus)
         {
             byte status = Wire.read();
-            if (needCTS && (status & 0x80) != 0)
-            {
-                CTS = true;
-                needCTS = false;
-            }
-
-            if (needSTC && (status & 0x01) != 0)
-            {
-                STC = true;
-                needSTC = false;
-            }
 
             if (status & 0x80)
             {
                 Serial.print("CTS ");
+                if (status & 0x80)
+                {
+                    CTS = true;
+                    needCTS = false;
+                }
             }
 
             if (status & 0x40)
             {
                 Serial.print("ERROR ");
+                ERR = true;
             }
 
             if (status & 0x01)
             {
                 Serial.print("STC ");
+                if (needSTC)
+                {
+                    STC = true;
+                    needSTC = false;
+                }
             }
         }
 
@@ -282,7 +303,7 @@ void waitForSTC()
 {
     waitForInterrupt();
     getStatus();
-    while (!getInterruptStatus())
+    while (!ERR && !getInterruptStatus())
     {
         sleep(1000);
     }
@@ -298,8 +319,11 @@ void cmdSetFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antenn
     if (freezeMetrics) options |= FM_TUNE_FREQ_FREEZE;
     if (fastTune) options |= FM_TUNE_FREQ_FAST;
 
+    Serial.print(f);
+    Serial.print(' ');
+
     transmitCommand(
-        "FM_TUNE_FREQ: 88.5",
+        "FM_TUNE_FREQ",
         FM_TUNE_FREQ, 0, true, false,
         options,
         highByte(f),
@@ -310,6 +334,30 @@ void cmdSetFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antenn
 void setFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antennaCapValue)
 {
     cmdSetFMTuneFrequency(f, freezeMetrics, fastTune, antennaCapValue);
+    waitForSTC();
+}
+
+void cmdSetWBTuneFrequency(int f)
+{
+#define WB_TUNE_FREQ 0x50
+
+    Serial.print(f);
+    Serial.print(" -> ");
+    f = translateWB(f);
+    Serial.print(f);
+    Serial.print(" ");
+
+    transmitCommand(
+        "WB_TUNE_FREQ",
+        WB_TUNE_FREQ, 0, true, false,
+        0x00, // always write 0
+        highByte(f),
+        lowByte(f));
+}
+
+void setWBTuneFrequency(int f)
+{
+    cmdSetWBTuneFrequency(f);
     waitForSTC();
 }
 
@@ -354,6 +402,29 @@ void cmdGetFMTuneStatus(bool cancelSeek, bool ackSTC)
 byte getFMTuneStatus(bool cancelSeek, bool ackSTC)
 {
     cmdGetFMTuneStatus(cancelSeek, ackSTC);
+    waitForInterrupt();
+    getStatus();
+    printStation();
+    return RESP[3];
+}
+
+void cmdGetWBTuneStatus(bool ackSTC)
+{
+#define WB_TUNE_STATUS 0x52
+#define WB_TUNE_STATUS_INTACK 0x01
+
+    byte options = 0;
+    if (ackSTC) options |= FM_TUNE_STATUS_INTACK;
+
+    transmitCommand(
+        "WB_TUNE_STATUS",
+        WB_TUNE_STATUS, 5, true, false,
+        options);
+}
+
+byte getWBTuneStatus(bool ackSTC)
+{
+    cmdGetWBTuneStatus(ackSTC);
     waitForInterrupt();
     getStatus();
     printStation();
@@ -481,9 +552,7 @@ void prepareChip()
 
     Serial.print("Set RSTb LOW, set power HIGH... ");
     pinMode(SI4737_PIN_RESET, OUTPUT);
-    pinMode(POWER_PIN, OUTPUT);
     digitalWrite(SI4737_PIN_RESET, LOW);
-    digitalWrite(POWER_PIN, HIGH);
     Serial.println("OK");
 
     Serial.print("Wait 250ms for VDD and VIO to stablize... ");
@@ -526,22 +595,3 @@ ISR(TIMER1_COMPA_vect)
     digitalWrite(CLOCK_PIN, clockPinState = !clockPinState);
 }
 #endif
-
-int translateWB(int wb)
-{
-    return 64960 + (wb - 162400) / 25;
-}
-
-void sleep(int millis)
-{
-    delay(millis >> CLOCK_SHIFT);
-}
-
-void wait(int seconds)
-{
-    for (int i = 0; i < seconds; ++i)
-    {
-        Serial.print('.');
-        sleep(1000);
-    }
-}

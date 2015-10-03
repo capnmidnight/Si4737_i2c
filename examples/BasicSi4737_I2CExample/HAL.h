@@ -19,17 +19,22 @@
 #define GPO2_INTERUPT_PIN GPO2_INTERUPT_PIN_OPT_1
 
 #define SI4737_BUS_ADDRESS 0x11
-#define POWER_PIN 8
 #define SI4737_PIN_RESET A1
 #define CLOCK_PIN A2
 
 #define POWER_UP_FUNC_FM_RCV 0x00
 #define POWER_UP_FUNC_WB_RCV 0x03
 #define POWER_UP_FUNC_QUERY_LIB_ID 0x0F
+#define POWER_UP_FUNC_NONE 0xFF
+
+#define FM_FREQ_MIN  640
+#define FM_FREQ_MAX 1080
+#define WB_FREQ_MIN 2400
+#define WB_FREQ_MAX 2550
 
 void prepareChip();
-void sleep(int millis);
-void wait(int seconds);
+void sleep(uint16_t millis);
+void wait(uint16_t seconds);
 void printStation();
 
 ////////////////////////////////////////////////////////////
@@ -118,19 +123,6 @@ Response bytes: Three
 uint16_t getProperty(const char* name, uint16_t propertyNumber);
 
 /*
-Updates bits 6:0 of the status byte. This command should be called after any command that sets the STCINT,
-RDSINT, or RSQINT bits. When polling this command should be periodically called to monitor the STATUS byte,
-and when using interrupts, this command should be called after the interrupt is set to update the STATUS byte. The
-CTS bit (and optional interrupt) is set when it is safe to send the next command. This command may only be set
-when in powerup mode.
-
-Available in: All
-*/
-bool getInterruptStatus();
-
-void waitForSTC();
-
-/*
 Sets the FM Receive to tune a frequency between 64 and 108 MHz in 10 kHz units. The CTS bit (and optional
 interrupt) is set when it is safe to send the next command. The ERR bit (and optional interrupt) is set if an invalid
 argument is sent. Note that only a single interrupt occurs if both the CTS and ERR bits are set. The optional STC
@@ -151,6 +143,19 @@ Note: Freeze bit is supported in FMRX components 4.0 or later.
 Available in: All
 */
 void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0);
+
+/*
+Sets the WB Receive to tune the frequency between 162.4 MHz and 162.55 MHz in 2.5 kHz units. For example
+162.4 MHz = 64960 and 162.55 MHz = 65020. The CTS bit (and optional interrupt) is set when it is safe to send the
+next command. The ERR bit (and optional interrupt) is set if an invalid argument is sent. Note that only a single
+interrupt occurs if both the CTS and ERR bits are set. The optional STC interrupt is set when the command
+completes. The STCINT bit is set only after the GET_INT_STATUS command is called. This command may only
+be sent when in powerup mode. The command clears the STC bit if it is already set.
+
+Available in: All
+*/
+void setWBTuneFrequency(int f);
+
 
 /*
 Begins searching for a valid frequency. Clears any pending STCINT or RSQINT interrupt status. The CTS bit (and
@@ -177,6 +182,18 @@ Available in: All
 Response bytes: Seven
 */
 byte getFMTuneStatus(bool cancelSeek = false, bool ackSTC = true);
+
+/*
+Returns the status of WB_TUNE_FREQ. The commands returns the current frequency, and RSSI/SNR at the
+moment of tune. The command clears the STCINT interrupt bit when INTACK bit of ARG1 is set. The CTS bit (and
+optional interrupt) is set when it is safe to send the next command. This command may only be sent when in
+powerup mode.
+
+Available in: All
+
+Response bytes: Five
+*/
+byte getWBTuneStatus(bool ackSTC = true);
 
 /*
 Enables output for GPO1, 2, and 3. GPO1, 2, and 3 can be configured for output (Hi-Z or active drive) by setting
@@ -236,6 +253,7 @@ value of 400 to divide it to 32500 Hz REFCLK. The reference clock frequency prop
 coverage for prescaler values ranging from 1 to 10, or frequencies up to 311300 Hz
 */
 void setReferenceClockFrequency(uint16_t value);
+
 /*
 Sets the number used by the prescaler to divide the external RCLK down to the internal REFCLK. The range may
 be between 1 and 4095 in 1 unit steps. For example, an RCLK of 13 MHz would require a prescaler value of 400 to

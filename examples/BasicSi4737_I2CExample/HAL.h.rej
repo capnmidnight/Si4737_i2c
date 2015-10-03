@@ -1,0 +1,46 @@
+diff a/examples/BasicSi4737_I2CExample/HAL.h b/examples/BasicSi4737_I2CExample/HAL.h	(rejected hunks)
+@@ -246,6 +246,44 @@
+ void setGPIOInterruptSources(bool repeatRSQ, bool repeatRDS, bool repeatSTC, bool enableCTS, bool enableERR, bool enableRSQ, bool enableRDS, bool enableSTC);
+ 
+ /*
++Gets the bottom of the FM band for seek. The CTS bit (and optional interrupt) is set when it is safe to send the next
++command. This property may only be set or read when in powerup mode. The default is 87.5 MHz.
++
++Available in: All
++
++Default: 0x222E
++
++Units: 10 kHz
++
++Step: 50 kHz
++
++Range: 64�108 MHz
++
++Note: For FMRX components 2.0 or earlier, range is 76�108 MHz
++*/
++uint16_t getFMSeekBandBottom();
++
++
++/*
++Gets the top of the FM band for seek. The CTS bit (and optional interrupt) is set when it is safe to send the next
++command. This property may only be set or read when in powerup mode. The default is 107.9 MHz.
++
++Available in: All
++
++Default: 0x2A26
++
++Units: 10 kHz
++
++Step: 50 kHz
++
++Range: 64�108 MHz
++
++Note: For FMRX components 2.0 or earlier, range is 76�108 MHz
++*/
++uint16_t getFMSeekBandTop();
++
++
++/*
+ Sets the frequency of the REFCLK from the output of the prescaler. The REFCLK range is 31130 to 34406 Hz
+ (32768 �5% Hz) in 1 Hz steps, or 0 (to disable AFC). For example, an RCLK of 13 MHz would require a prescaler
+ value of 400 to divide it to 32500 Hz REFCLK. The reference clock frequency property would then need to be set to

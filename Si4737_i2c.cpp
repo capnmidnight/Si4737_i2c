@@ -743,7 +743,7 @@ void Si4737::enableRDS(void){
 }
 
 void Si4737::waitForInterrupt(byte which){
-	while(!(getStatus() > 0 & which)){
+	while(!((getStatus() > 0) & which)){
 		//Balance being snappy with hogging the chip
 		delay(125);
 		sendCommand(SI4737_CMD_GET_INT_STATUS);

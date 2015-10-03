@@ -172,14 +172,17 @@ void loop()
             while (serial_in != 'W') {
                 serial_in = toupper(Serial.read());
                 if ((serial_in >= '0' && serial_in <= '9') ||
-                    (serial_in >= 'A' && serial_in <= 'F'))
+                    (serial_in >= 'A' && serial_in <= 'F')) {
                     if (strlen(collectedDigits) < 16) {
                         strncat(collectedDigits, &serial_in, 1);
                         //Echo the command string as it is composed
                         Serial.print(serial_in);
                     }
-                    else Serial.println(F("Too many hex digits, 16 maximum!"));
+                    else {
+                        Serial.println(F("Too many hex digits, 16 maximum!"));
+                    }
                     Serial.flush();
+                }
             }
 
             //Send Commands
