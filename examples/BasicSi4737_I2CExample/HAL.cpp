@@ -1,20 +1,16 @@
-// 
-// 
-// 
-
 #include "HAL.h"
-#include <Wire.h>
+#include <I2C/I2C.h>
 
 bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false, ERR = false;
 int expResp = 0;
 uint8_t clockPinState = LOW;
 
-byte RESP[15] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+byte RESP[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 
 uint16_t translateWB(uint16_t wb)
 {
-    return 64960 + (wb - 162400) / 25;
+    return 64960 + (wb - 162400) * 2 / 5;
 }
 
 void sleep(uint16_t millis)
@@ -26,7 +22,6 @@ void wait(uint16_t seconds)
 {
     for (uint16_t i = 0; i < seconds; ++i)
     {
-        Serial.print('.');
         sleep(1000);
     }
 }
@@ -104,51 +99,42 @@ void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExp
         ++numArgs;
     }
 
-    Serial.print("CMD ");
-    printBuffer(name, numArgs, params);
-    Wire.beginTransmission(SI4737_BUS_ADDRESS);
-    Wire.write(cmd);
-    if (numArgs > 0)
-    {
-        Wire.write(params, numArgs);
-    }
-
-    byte status = Wire.endTransmission(false);
-
-    Serial.print("I2C status: ");
-    Serial.print(status);
-    Serial.print(" -> ");
-    switch (status)
-    {
-    case 0: Serial.print("OK"); break;
-    case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
-    case 2: Serial.print("ERR: received NACK on transmit of address."); break;
-    case 3: Serial.print("ERR: received NACK on transmit of data."); break;
-    default: Serial.print("ERR: unknown."); break;
-    }
-    Serial.println();
+    //Serial.print("CMD ");
+    //printBuffer(name, numArgs, params);
+    byte status = I2c.write(SI4737_BUS_ADDRESS, cmd, params, numArgs);
+    
+    //Serial.print("I2C status: ");
+    //Serial.print(status);
+    //Serial.print(" -> ");
+    //switch (status)
+    //{
+    //case 0: Serial.print("OK"); break;
+    //case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
+    //case 2: Serial.print("ERR: received NACK on transmit of address."); break;
+    //case 3: Serial.print("ERR: received NACK on transmit of data."); break;
+    //default: Serial.print("ERR: unknown."); break;
+    //}
+    //Serial.println();
 }
 
 void getStatus()
 {
     bool needStatus = needCTS || needSTC;
-    if (expResp > 0 || needStatus)
+    if (needStatus)
     {
-        Serial.print("... ");
-        Wire.requestFrom(SI4737_BUS_ADDRESS, expResp + (needStatus ? 1 : 0));
-        while (Wire.available() < expResp)
-        {
-            Serial.print('.');
-            sleep(100);
-        }
-
+        ++expResp;
+    }
+    if (expResp > 0)
+    {
+        //Serial.print("... ");
+        byte i2cStatus = I2c.read(SI4737_BUS_ADDRESS, expResp, RESP);
         if (needStatus)
         {
-            byte status = Wire.read();
-
+            byte status = RESP[0];
+            
             if (status & 0x80)
             {
-                Serial.print("CTS ");
+                //Serial.print("CTS ");
                 if (status & 0x80)
                 {
                     CTS = true;
@@ -158,13 +144,13 @@ void getStatus()
 
             if (status & 0x40)
             {
-                Serial.print("ERROR ");
+                Serial.print(" ERROR ");
                 ERR = true;
             }
 
             if (status & 0x01)
             {
-                Serial.print("STC ");
+                //Serial.print(" STC ");
                 if (needSTC)
                 {
                     STC = true;
@@ -173,20 +159,15 @@ void getStatus()
             }
         }
 
-        if (expResp > 0)
-        {
-            Wire.readBytes(RESP, expResp);
-            printBuffer("RESP", expResp, RESP);
-        }
         expResp = 0;
-        Serial.println();
+        //Serial.println();
     }
 }
 
 void printStation()
 {
     Serial.print("Station: ");
-    Serial.println(makeWord(RESP[1], RESP[2]));
+    Serial.println(makeWord(RESP[2], RESP[3]));
 }
 
 ////////////////////////////////////////////////////////////
@@ -250,7 +231,7 @@ void setProperty(const char* name, uint16_t propertyNumber, uint16_t propertyVal
 {
 #define SET_PROPERTY 0x12
 
-    Serial.print("SET_PROPERTY: ");
+    //Serial.print("SET_PROPERTY: ");
     transmitCommand(
         name,
         SET_PROPERTY, 0, false, false,
@@ -266,7 +247,7 @@ void cmdGetProperty(const char* name, uint16_t propertyNumber)
 {
 #define GET_PROPERTY 0x13
 
-    Serial.print("GET_PROPERTY: ");
+    //Serial.print("GET_PROPERTY: ");
     transmitCommand(name,
         GET_PROPERTY, 3, true, false,
         0x00, // always 0
@@ -278,7 +259,7 @@ uint16_t getProperty(const char* name, uint16_t propertyNumber)
     cmdGetProperty(name, propertyNumber);
     waitForInterrupt();
     getStatus();
-    uint16_t value = makeWord(RESP[1], RESP[2]);
+    uint16_t value = makeWord(RESP[2], RESP[3]);
     return value;
 }
 
@@ -318,9 +299,6 @@ void cmdSetFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antenn
     byte options = 0;
     if (freezeMetrics) options |= FM_TUNE_FREQ_FREEZE;
     if (fastTune) options |= FM_TUNE_FREQ_FAST;
-
-    Serial.print(f);
-    Serial.print(' ');
 
     transmitCommand(
         "FM_TUNE_FREQ",
@@ -404,8 +382,8 @@ byte getFMTuneStatus(bool cancelSeek, bool ackSTC)
     cmdGetFMTuneStatus(cancelSeek, ackSTC);
     waitForInterrupt();
     getStatus();
-    printStation();
-    return RESP[3];
+    //printStation();
+    return RESP[4];
 }
 
 void cmdGetWBTuneStatus(bool ackSTC)
@@ -427,8 +405,8 @@ byte getWBTuneStatus(bool ackSTC)
     cmdGetWBTuneStatus(ackSTC);
     waitForInterrupt();
     getStatus();
-    printStation();
-    return RESP[3];
+    //printStation();
+    return RESP[4];
 }
 
 void cmdSetGPIOModes(bool enableGPIO1, bool enableGPIO2, bool enableGPIO3)
@@ -568,7 +546,7 @@ void prepareChip()
     Serial.flush();
     pinMode(CLOCK_PIN, OUTPUT);
     cli(); //stop interrupts
-    OCR1A = 4 >> CLOCK_SHIFT;
+    OCR1A = 5 >> CLOCK_SHIFT;
     TCCR1A = (1 << WGM11);
     TCCR1B = (1 << CS10);
     TIMSK1 = (1 << OCIE1A);
@@ -586,7 +564,7 @@ void prepareChip()
 
     attachInterrupt(digitalPinToInterrupt(GPO2_INTERUPT_PIN), GPO2InteruptHandler, FALLING);
 
-    Wire.begin();
+    I2c.begin();
 }
 
 #ifdef USE_SOFTWARE_CLOCK

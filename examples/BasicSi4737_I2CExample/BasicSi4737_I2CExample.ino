@@ -4,8 +4,8 @@ Created:	9/28/2015 3:00:31 PM
 Author:	Sean
 */
 
+#include <I2C.h>
 #include "HAL.h"
-#include <Wire.h>
 
 #define SIGNAL_PIN 3
 #define FM_MODE_PIN 12
@@ -154,8 +154,5 @@ void loop()
         signalStrength = getWBTuneStatus();
     }
 
-    Serial.print("Signal strength: ");
-    Serial.println(signalStrength);
     analogWrite(SIGNAL_PIN, signalStrength);
-    sleep(250);
 }
