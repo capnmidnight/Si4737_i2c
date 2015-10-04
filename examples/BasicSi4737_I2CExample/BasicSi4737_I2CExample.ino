@@ -7,6 +7,7 @@ Author:	Sean
 #include <I2C.h>
 #include "HAL.h"
 
+#define DEBOUNCE_COUNT 3
 #define SIGNAL_PIN 3
 #define FM_MODE_PIN 12
 #define WB_MODE_PIN 13
@@ -29,7 +30,7 @@ const int digitBitPins[DIGIT_BIT_COUNT] = { DIGIT_BIT_PIN0, DIGIT_BIT_PIN1, DIGI
 int oldFrequency = 0;
 byte oldMode = POWER_UP_FUNC_NONE;
 
-int readFrequency()
+int rawReadFrequency()
 {
     int frequency = 0;
     for (size_t s = 0; s < DIGIT_SEL_COUNT; ++s)
@@ -45,6 +46,17 @@ int readFrequency()
             frequency += digit;
         }
         digitalWrite(digitSelectPins[s], LOW);
+    }
+    return frequency;
+}
+
+int readFrequency()
+{
+    int frequency = 0;
+    for (int i = 0; i < DEBOUNCE_COUNT; ++i) 
+    {
+        frequency = max(frequency, rawReadFrequency());
+        sleep(33);
     }
     return frequency;
 }
