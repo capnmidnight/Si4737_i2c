@@ -2,15 +2,14 @@
 #include <I2C/I2C.h>
 
 bool interruptReceived = true, CTS = true, needCTS = false, STC = true, needSTC = false, ERR = false;
-int expResp = 0;
-uint8_t clockPinState = LOW;
+size_t expResp = 0;
 
 byte RESP[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 
 uint16_t translateWB(uint16_t wb)
 {
-    return 64960 + (wb - 162400) * 2 / 5;
+    return 64960 + (wb - 2400) * 2 / 5;
 }
 
 void sleep(uint16_t millis)
@@ -74,7 +73,7 @@ void printBuffer(const char* name, const size_t size, const byte* buffer, int ra
 // CHIP COMS
 ////////////////////////////////////////////////////////////
 
-void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExpected, bool stcExpected, int arg0 = -1, int arg1 = -1, int arg2 = -1, int arg3 = -1, int arg4 = -1, int arg5 = -1, int arg6 = -1)
+void transmitCommand(const char* name, byte cmd, size_t responseLength, bool ctsExpected, bool stcExpected, int arg0 = -1, int arg1 = -1, int arg2 = -1, int arg3 = -1, int arg4 = -1, int arg5 = -1, int arg6 = -1)
 {
     CTS = false;
     STC = false;
@@ -101,7 +100,7 @@ void transmitCommand(const char* name, byte cmd, int responseLength, bool ctsExp
 
     //Serial.print("CMD ");
     //printBuffer(name, numArgs, params);
-    byte status = I2c.write(SI4737_BUS_ADDRESS, cmd, params, numArgs);
+    I2c.write(SI4737_BUS_ADDRESS, cmd, params, numArgs);
     
     //Serial.print("I2C status: ");
     //Serial.print(status);
@@ -127,7 +126,7 @@ void getStatus()
     if (expResp > 0)
     {
         //Serial.print("... ");
-        byte i2cStatus = I2c.read(SI4737_BUS_ADDRESS, expResp, RESP);
+        I2c.read(SI4737_BUS_ADDRESS, expResp, RESP);
         if (needStatus)
         {
             byte status = RESP[0];
@@ -286,11 +285,11 @@ void waitForSTC()
     getStatus();
     while (!ERR && !getInterruptStatus())
     {
-        sleep(1000);
+        sleep(250);
     }
 }
 
-void cmdSetFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antennaCapValue)
+void cmdSetFMTuneFrequency(uint16_t f, bool freezeMetrics, bool fastTune, byte antennaCapValue)
 {
 #define FM_TUNE_FREQ 0x20
 #define FM_TUNE_FREQ_FREEZE 0x02
@@ -309,13 +308,14 @@ void cmdSetFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antenn
         antennaCapValue);
 }
 
-void setFMTuneFrequency(int f, bool freezeMetrics, bool fastTune, byte antennaCapValue)
+void setFMTuneFrequency(uint16_t f, bool freezeMetrics, bool fastTune, byte antennaCapValue)
 {
     cmdSetFMTuneFrequency(f, freezeMetrics, fastTune, antennaCapValue);
+    sleep(100);
     waitForSTC();
 }
 
-void cmdSetWBTuneFrequency(int f)
+void cmdSetWBTuneFrequency(uint16_t f)
 {
 #define WB_TUNE_FREQ 0x50
 
@@ -333,7 +333,7 @@ void cmdSetWBTuneFrequency(int f)
         lowByte(f));
 }
 
-void setWBTuneFrequency(int f)
+void setWBTuneFrequency(uint16_t f)
 {
     cmdSetWBTuneFrequency(f);
     waitForSTC();
@@ -541,20 +541,6 @@ void prepareChip()
     sleep(100);
     Serial.println("OK");
 
-#ifdef USE_SOFTWARE_CLOCK
-    Serial.print("Start the clock signal and wait 500ms for it to stabalize... ");
-    Serial.flush();
-    pinMode(CLOCK_PIN, OUTPUT);
-    cli(); //stop interrupts
-    OCR1A = 5 >> CLOCK_SHIFT;
-    TCCR1A = (1 << WGM11);
-    TCCR1B = (1 << CS10);
-    TIMSK1 = (1 << OCIE1A);
-    sei(); //allow interrupts
-    sleep(500);
-    Serial.println("OK");
-#endif
-
     Serial.print("Set RESTb HIGH and wait at least 10ns... ");
     digitalWrite(SI4737_PIN_RESET, HIGH);
     sleep(1);
@@ -566,10 +552,3 @@ void prepareChip()
 
     I2c.begin();
 }
-
-#ifdef USE_SOFTWARE_CLOCK
-ISR(TIMER1_COMPA_vect)
-{
-    digitalWrite(CLOCK_PIN, clockPinState = !clockPinState);
-}
-#endif

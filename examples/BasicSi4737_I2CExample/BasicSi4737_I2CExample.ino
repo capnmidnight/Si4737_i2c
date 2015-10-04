@@ -27,18 +27,18 @@ Author:	Sean
 const int digitSelectPins[DIGIT_SEL_COUNT] = { DIGIT_SEL_PIN0, DIGIT_SEL_PIN1, DIGIT_SEL_PIN2, DIGIT_SEL_PIN3 };
 const int digitBitPins[DIGIT_BIT_COUNT] = { DIGIT_BIT_PIN0, DIGIT_BIT_PIN1, DIGIT_BIT_PIN2, DIGIT_BIT_PIN3 };
 
-int oldFrequency = 0;
+uint16_t oldFrequency = 0;
 byte oldMode = POWER_UP_FUNC_NONE;
 
-int rawReadFrequency()
+uint16_t rawReadFrequency()
 {
-    int frequency = 0;
+    uint16_t frequency = 0;
     for (size_t s = 0; s < DIGIT_SEL_COUNT; ++s)
     {
         digitalWrite(digitSelectPins[s], HIGH);
         for (size_t b = 0; b < DIGIT_BIT_COUNT; ++b)
         {
-            int digit = (digitalRead(digitBitPins[b]) << b);
+            uint16_t digit = (digitalRead(digitBitPins[b]) << b);
             for (size_t z = 0; z < DIGIT_SEL_COUNT - s - 1; ++z)
             {
                 digit *= 10;
@@ -50,9 +50,9 @@ int rawReadFrequency()
     return frequency;
 }
 
-int readFrequency()
+uint16_t readFrequency()
 {
-    int frequency = 0;
+    uint16_t frequency = 0;
     for (int i = 0; i < DEBOUNCE_COUNT; ++i) 
     {
         frequency = max(frequency, rawReadFrequency());
@@ -87,7 +87,7 @@ void setup()
     prepareChip();
 }
 
-byte getModeFromFrequency(int frequency)
+byte getModeFromFrequency(uint16_t frequency)
 {
     byte mode = POWER_UP_FUNC_NONE;
     if (FM_FREQ_MIN <= frequency && frequency <= FM_FREQ_MAX)
@@ -121,11 +121,8 @@ void startNewMode(byte mode)
         {
             Serial.print("Starting new mode: ");
             Serial.println(mode == POWER_UP_FUNC_FM_RCV ? "FM" : "WB");
-            powerUp(mode);
+            powerUp(mode, true, false, true, true, true, false);
             setGPIOModes(true, true, true);
-            setGPIOInterruptSources(false, false, false, true, true, true, false, true);
-            setReferenceClockPrescale(1);
-            setReferenceClockFrequency(31250);
             sleep(500);
             digitalWrite(mode == POWER_UP_FUNC_FM_RCV ? FM_MODE_PIN : WB_MODE_PIN, HIGH);
         }
@@ -134,7 +131,7 @@ void startNewMode(byte mode)
 
 void loop()
 {
-    int frequency = readFrequency();
+    uint16_t frequency = readFrequency();
     if (frequency != oldFrequency)
     {
         Serial.print("FREQ: ");
@@ -149,10 +146,9 @@ void loop()
         }
         else if (mode == POWER_UP_FUNC_WB_RCV)
         {
-            setWBTuneFrequency(frequency + 160000);
+            setWBTuneFrequency(frequency);
         }
 
-        oldFrequency = frequency;
         oldMode = mode;
     }
 
@@ -167,4 +163,5 @@ void loop()
     }
 
     analogWrite(SIGNAL_PIN, signalStrength);
+    oldFrequency = frequency;
 }

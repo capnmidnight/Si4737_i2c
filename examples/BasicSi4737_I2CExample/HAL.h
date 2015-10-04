@@ -7,10 +7,7 @@
 
 #define CLOCK_SHIFT_5V 0
 #define CLOCK_SHIFT_3_3V 1
-
 #define CLOCK_SHIFT CLOCK_SHIFT_3_3V
-
-#define USE_SOFTWARE_CLOCK
 
 #define MAX_NUM_ARGS 7
 
@@ -19,8 +16,7 @@
 #define GPO2_INTERUPT_PIN GPO2_INTERUPT_PIN_OPT_1
 
 #define SI4737_BUS_ADDRESS 0x11
-#define SI4737_PIN_RESET A1
-#define CLOCK_PIN A2
+#define SI4737_PIN_RESET A0
 
 #define POWER_UP_FUNC_FM_RCV 0x00
 #define POWER_UP_FUNC_WB_RCV 0x03
@@ -142,7 +138,7 @@ Note: Freeze bit is supported in FMRX components 4.0 or later.
 
 Available in: All
 */
-void setFMTuneFrequency(int f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0);
+void setFMTuneFrequency(uint16_t f, bool freezeMetrics = false, bool fastTune = false, byte antennaCapValue = 0);
 
 /*
 Sets the WB Receive to tune the frequency between 162.4 MHz and 162.55 MHz in 2.5 kHz units. For example
@@ -154,7 +150,7 @@ be sent when in powerup mode. The command clears the STC bit if it is already se
 
 Available in: All
 */
-void setWBTuneFrequency(int f);
+void setWBTuneFrequency(uint16_t f);
 
 
 /*
