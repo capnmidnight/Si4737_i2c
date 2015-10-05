@@ -150,8 +150,8 @@ void displaySignalStrength()
     {
         temp /= MAX_RSSI_WB * MAX_RSSI_WB;
     }
-    uint16_t temp2 = (uint16_t)temp;
-    analogWrite(SIGNAL_PIN, lowByte(temp2));
+
+    analogWrite(SIGNAL_PIN, lowByte((uint16_t)temp));
 }
 
 void loop()
