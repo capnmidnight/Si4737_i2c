@@ -8,6 +8,7 @@ Author:	Sean
 #include "HAL.h"
 
 #define DEBOUNCE_COUNT 3
+#define MAX_ARDUINO_ANALOG_WRITE 255
 #define SIGNAL_PIN 3
 #define FM_MODE_PIN 12
 #define WB_MODE_PIN 13
@@ -28,7 +29,7 @@ const int digitSelectPins[DIGIT_SEL_COUNT] = { DIGIT_SEL_PIN0, DIGIT_SEL_PIN1, D
 const int digitBitPins[DIGIT_BIT_COUNT] = { DIGIT_BIT_PIN0, DIGIT_BIT_PIN1, DIGIT_BIT_PIN2, DIGIT_BIT_PIN3 };
 
 uint16_t oldFrequency = 0;
-byte oldMode = POWER_UP_FUNC_NONE;
+byte currentMode = POWER_UP_FUNC_NONE;
 
 uint16_t rawReadFrequency()
 {
@@ -68,11 +69,6 @@ void setup()
     // Monitor, because the lower voltage Arduino's only run at half the clock
     // rate but doesn't know it, so the SoftSerial code assumes it's running at full
     // speed, which screws up the timing.
-    
-    Serial.begin(115200 << CLOCK_SHIFT);
-    Serial.println();
-    Serial.println();
-    Serial.println("OK");
 
     pinMode(FM_MODE_PIN, OUTPUT);
     pinMode(WB_MODE_PIN, OUTPUT);
@@ -103,13 +99,12 @@ byte getModeFromFrequency(uint16_t frequency)
 
 void startNewMode(byte mode)
 {
-    if (mode != oldMode)
+    if (mode != currentMode)
     {
-        if (oldMode != POWER_UP_FUNC_NONE)
+        if (currentMode != POWER_UP_FUNC_NONE)
         {
-            Serial.println("Shutting down old mode.");
             powerDown();
-            digitalWrite(oldMode == POWER_UP_FUNC_FM_RCV ? FM_MODE_PIN : WB_MODE_PIN, LOW);
+            digitalWrite(currentMode == POWER_UP_FUNC_FM_RCV ? FM_MODE_PIN : WB_MODE_PIN, LOW);
         }
 
         if (mode != POWER_UP_FUNC_FM_RCV && mode != POWER_UP_FUNC_WB_RCV)
@@ -119,8 +114,6 @@ void startNewMode(byte mode)
 
         if (mode != POWER_UP_FUNC_NONE)
         {
-            Serial.print("Starting new mode: ");
-            Serial.println(mode == POWER_UP_FUNC_FM_RCV ? "FM" : "WB");
             powerUp(mode, true, false, true, true, true, false);
             setGPIOModes(true, true, true);
             sleep(500);
@@ -129,13 +122,43 @@ void startNewMode(byte mode)
     }
 }
 
+void displaySignalStrength()
+{
+    static byte maxSignalStrength = 0;
+    byte signalStrength = 0;
+    if (currentMode == POWER_UP_FUNC_FM_RCV)
+    {
+        signalStrength = getFMTuneStatus();
+    }
+    else if (currentMode == POWER_UP_FUNC_WB_RCV)
+    {
+        signalStrength = getWBTuneStatus();
+    }
+
+    if (signalStrength > maxSignalStrength)
+    {
+        maxSignalStrength = signalStrength;
+    }
+
+    float temp = signalStrength;
+    temp *= temp * MAX_ARDUINO_ANALOG_WRITE;
+    if (currentMode == POWER_UP_FUNC_FM_RCV)
+    {
+        temp /= MAX_RSSI_FM * MAX_RSSI_FM;
+    }
+    else if (currentMode == POWER_UP_FUNC_WB_RCV)
+    {
+        temp /= MAX_RSSI_WB * MAX_RSSI_WB;
+    }
+    uint16_t temp2 = (uint16_t)temp;
+    analogWrite(SIGNAL_PIN, lowByte(temp2));
+}
+
 void loop()
 {
     uint16_t frequency = readFrequency();
     if (frequency != oldFrequency)
     {
-        Serial.print("FREQ: ");
-        Serial.println(frequency);
         byte mode = getModeFromFrequency(frequency);
 
         startNewMode(mode);
@@ -149,19 +172,9 @@ void loop()
             setWBTuneFrequency(frequency);
         }
 
-        oldMode = mode;
+        currentMode = mode;
+        oldFrequency = frequency;
     }
 
-    byte signalStrength = 0;
-    if (oldMode == POWER_UP_FUNC_FM_RCV)
-    {
-        signalStrength = getFMTuneStatus();
-    }
-    else if (oldMode == POWER_UP_FUNC_WB_RCV)
-    {
-        signalStrength = getWBTuneStatus();
-    }
-
-    analogWrite(SIGNAL_PIN, signalStrength);
-    oldFrequency = frequency;
+    displaySignalStrength();
 }

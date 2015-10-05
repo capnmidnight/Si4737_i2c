@@ -10,6 +10,8 @@
 #define CLOCK_SHIFT CLOCK_SHIFT_3_3V
 
 #define MAX_NUM_ARGS 7
+#define MAX_RSSI_FM 35 // obtained imperically
+#define MAX_RSSI_WB 9 // obtained imperically
 
 #define GPO2_INTERUPT_PIN_OPT_1 2
 #define GPO2_INTERUPT_PIN_OPT_2 3
@@ -66,17 +68,6 @@ Available in: All
 Response Bytes: None (FUNC != QUERY_LIBRARY_ID), Seven (FUNC = QUERY_LIBRARY_ID)
 */
 void powerUp(byte funcMode, bool analogOutput = true, bool digitalOutput = false, bool enableCTSInterrupt = true, bool enableGP02 = true, bool enableXOSC = false, bool enablePatch = false);
-
-/*
-Returns the part number, chip revision, firmware revision, patch revision and component revision numbers.The
-command is complete when the CTS bit(and optional interrupt) is set.This command may only be sent when in
-powerup mode.
-
-Available in : All
-
-Response bytes : Fifteen(Si4705 / 06 only), Eight(Si4704 / 2x / 3x / 4x)
-*/
-void printRevision(bool isSI4705or06 = false);
 
 /*
 Moves the device from powerup to powerdown mode. The CTS bit (and optional interrupt) is set when it is safe to
@@ -240,60 +231,6 @@ Available in: All
 Default: 0x0000
 */
 void setGPIOInterruptSources(bool repeatRSQ, bool repeatRDS, bool repeatSTC, bool enableCTS, bool enableERR, bool enableRSQ, bool enableRDS, bool enableSTC);
-
-/*
-Sets the frequency of the REFCLK from the output of the prescaler. The REFCLK range is 31130 to 34406 Hz
-(32768 ±5% Hz) in 1 Hz steps, or 0 (to disable AFC). For example, an RCLK of 13 MHz would require a prescaler
-value of 400 to divide it to 32500 Hz REFCLK. The reference clock frequency property would then need to be set to
-32500 Hz. RCLK frequencies between 31130 Hz and 40 MHz are supported, however, there are gaps in frequency
-coverage for prescaler values ranging from 1 to 10, or frequencies up to 311300 Hz
-*/
-void setReferenceClockFrequency(uint16_t value);
-
-/*
-Sets the number used by the prescaler to divide the external RCLK down to the internal REFCLK. The range may
-be between 1 and 4095 in 1 unit steps. For example, an RCLK of 13 MHz would require a prescaler value of 400 to
-divide it to 32500 Hz. The reference clock frequency property would then need to be set to 32500 Hz. The RCLK
-must be valid 10 ns before sending and 20 ns after completing the AM_TUNE_FREQ and AM_SEEK_START
-commands. In addition, the RCLK must be valid at all times for proper AFC operation. The RCLK may be removed
-or reconfigured at other times. The CTS bit (and optional interrupt) is set when it is safe to send the next command.
-This property may only be set or read when in powerup mode. The default is 1.
-
-Available in: All
-
-Default: 0x0001
-
-Step: 1
-
-Range: 1–4095
-*/
-void setReferenceClockPrescale(uint16_t value, bool useDCLK = false);
-
-
-/*
-Sets the audio output volume. The CTS bit (and optional interrupt) is set when it is safe to send the next command.
-This property may only be set or read when in powerup mode. The default is 63.
-
-Available in: All except Si4749
-
-Default: 0x003F
-
-Step: 1
-
-Range: 0–63
-*/
-void setVolume(byte value);
-
-/*
-Mutes the audio output. L and R audio outputs may be muted independently. The CTS bit (and optional interrupt) is
-set when it is safe to send the next command. This property may only be set or read when in powerup mode. The
-default is unmute (0x0000).
-
-Available in: All except Si4749
-
-Default: 0x0000
-*/
-void setHardMute(bool muteLeft, bool muteRight);
 
 #endif
 

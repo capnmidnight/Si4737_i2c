@@ -39,36 +39,6 @@ void waitForInterrupt()
     interruptReceived = false;
 }
 
-void printBuffer(const char* name, const size_t size, const byte* buffer, int radix = 16)
-{
-    Serial.print(name);
-    Serial.print('(');
-    if (size > 0)
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (radix == 16)
-            {
-                Serial.print("0x");
-                if (buffer[i] < radix)
-                {
-                    Serial.print(0);
-                }
-            }
-            Serial.print(buffer[i], radix);
-            if (radix == 2)
-            {
-                Serial.print('b');
-            }
-            if (i < (size - 1))
-            {
-                Serial.print(", ");
-            }
-        }
-    }
-    Serial.print(')');
-}
-
 ////////////////////////////////////////////////////////////
 // CHIP COMS
 ////////////////////////////////////////////////////////////
@@ -98,22 +68,7 @@ void transmitCommand(const char* name, byte cmd, size_t responseLength, bool cts
         ++numArgs;
     }
 
-    //Serial.print("CMD ");
-    //printBuffer(name, numArgs, params);
     I2c.write(SI4737_BUS_ADDRESS, cmd, params, numArgs);
-    
-    //Serial.print("I2C status: ");
-    //Serial.print(status);
-    //Serial.print(" -> ");
-    //switch (status)
-    //{
-    //case 0: Serial.print("OK"); break;
-    //case 1: Serial.print("ERR: data too long to fit in transmit buffer."); break;
-    //case 2: Serial.print("ERR: received NACK on transmit of address."); break;
-    //case 3: Serial.print("ERR: received NACK on transmit of data."); break;
-    //default: Serial.print("ERR: unknown."); break;
-    //}
-    //Serial.println();
 }
 
 void getStatus()
@@ -125,48 +80,31 @@ void getStatus()
     }
     if (expResp > 0)
     {
-        //Serial.print("... ");
         I2c.read(SI4737_BUS_ADDRESS, expResp, RESP);
         if (needStatus)
         {
             byte status = RESP[0];
-            
-            if (status & 0x80)
+
+            if (status & 0x80 && needCTS)
             {
-                //Serial.print("CTS ");
-                if (status & 0x80)
-                {
-                    CTS = true;
-                    needCTS = false;
-                }
+                CTS = true;
+                needCTS = false;
             }
 
             if (status & 0x40)
             {
-                Serial.print(" ERROR ");
                 ERR = true;
             }
 
-            if (status & 0x01)
+            if (status & 0x01 && needSTC)
             {
-                //Serial.print(" STC ");
-                if (needSTC)
-                {
-                    STC = true;
-                    needSTC = false;
-                }
+                STC = true;
+                needSTC = false;
             }
         }
 
         expResp = 0;
-        //Serial.println();
     }
-}
-
-void printStation()
-{
-    Serial.print("Station: ");
-    Serial.println(makeWord(RESP[2], RESP[3]));
 }
 
 ////////////////////////////////////////////////////////////
@@ -205,20 +143,6 @@ void powerUp(byte funcMode, bool analogOutput, bool digitalOutput, bool enableCT
     getStatus();
 }
 
-void cmdGetRevision(bool isSI4705or06)
-{
-#define GET_REV 0x10
-
-    transmitCommand("GET_REV", GET_REV, isSI4705or06 ? 15 : 8, true, false);
-}
-
-void printRevision(bool isSI4705or06)
-{
-    cmdGetRevision(isSI4705or06);
-    waitForInterrupt();
-    getStatus();
-}
-
 void powerDown()
 {
 #define POWER_DOWN 0x11
@@ -230,7 +154,6 @@ void setProperty(const char* name, uint16_t propertyNumber, uint16_t propertyVal
 {
 #define SET_PROPERTY 0x12
 
-    //Serial.print("SET_PROPERTY: ");
     transmitCommand(
         name,
         SET_PROPERTY, 0, false, false,
@@ -246,7 +169,6 @@ void cmdGetProperty(const char* name, uint16_t propertyNumber)
 {
 #define GET_PROPERTY 0x13
 
-    //Serial.print("GET_PROPERTY: ");
     transmitCommand(name,
         GET_PROPERTY, 3, true, false,
         0x00, // always 0
@@ -319,11 +241,7 @@ void cmdSetWBTuneFrequency(uint16_t f)
 {
 #define WB_TUNE_FREQ 0x50
 
-    Serial.print(f);
-    Serial.print(" -> ");
     f = translateWB(f);
-    Serial.print(f);
-    Serial.print(" ");
 
     transmitCommand(
         "WB_TUNE_FREQ",
@@ -382,7 +300,6 @@ byte getFMTuneStatus(bool cancelSeek, bool ackSTC)
     cmdGetFMTuneStatus(cancelSeek, ackSTC);
     waitForInterrupt();
     getStatus();
-    //printStation();
     return RESP[4];
 }
 
@@ -405,7 +322,6 @@ byte getWBTuneStatus(bool ackSTC)
     cmdGetWBTuneStatus(ackSTC);
     waitForInterrupt();
     getStatus();
-    //printStation();
     return RESP[4];
 }
 
@@ -486,69 +402,13 @@ void setGPIOInterruptSources(bool repeatRSQ, bool repeatRDS, bool repeatSTC, boo
     setProperty("GPIO_IEN", GPIO_IEN, value);
 }
 
-void setReferenceClockFrequency(uint16_t value)
-{
-#define REFCLK_FREQ 0x0201
-
-    setProperty("REFCLK_FREQ", REFCLK_FREQ, value);
-}
-
-void setReferenceClockPrescale(uint16_t value, bool useDCLK)
-{
-#define REFCLK_PRESCALE 0x0202
-#define REFCLK_PRESCALE_RCLKSEL_RCLK 0x0000
-#define REFCLK_PRESCALE_RCLKSEL_DCLK 0x1000
-
-    if (useDCLK) value |= REFCLK_PRESCALE_RCLKSEL_DCLK;
-
-    setProperty("REFCLK_PRESCALE", REFCLK_FREQ, value);
-}
-
-void setVolume(byte value)
-{
-#define RX_VOLUME 0x4000
-
-    setProperty("RX_VOLUME", RX_VOLUME, value);
-}
-
-void setHardMute(bool muteLeft, bool muteRight)
-{
-#define RX_HARD_MUTE 0x4001
-#define RX_HARD_MUTE_LEFT 0x0002
-#define RX_HARD_MUTE_RIGHT 0x0001
-
-    byte value = 0;
-    if (muteLeft) value |= RX_HARD_MUTE_LEFT;
-    if (muteRight) value |= RX_HARD_MUTE_RIGHT;
-
-    setProperty("RX_HARD_MUTE", RX_HARD_MUTE, value);
-}
-
 void prepareChip()
 {
-    Serial.println("Si4737 setup sequence:");
-
-    Serial.print("Set RSTb LOW, set power HIGH... ");
     pinMode(SI4737_PIN_RESET, OUTPUT);
     digitalWrite(SI4737_PIN_RESET, LOW);
-    Serial.println("OK");
-
-    Serial.print("Wait 250ms for VDD and VIO to stablize... ");
-    sleep(250);
-    Serial.println("OK");
-
-    Serial.print("Use default bus mode and wait 100ms to stabalize... ");
-    sleep(100);
-    Serial.println("OK");
-
-    Serial.print("Set RESTb HIGH and wait at least 10ns... ");
+    sleep(500);
     digitalWrite(SI4737_PIN_RESET, HIGH);
     sleep(1);
-    Serial.println("OK");
-    Serial.println("Si4737 setup sequence complete!");
-    Serial.println();
-
     attachInterrupt(digitalPinToInterrupt(GPO2_INTERUPT_PIN), GPO2InteruptHandler, FALLING);
-
     I2c.begin();
 }
