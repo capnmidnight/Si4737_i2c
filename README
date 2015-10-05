@@ -1,99 +1,3 @@
-Arduino Si4737 I2C Library, adapted from
-  rickeywang - Rickey Wang (https://github.com/rickeywang/Si4737_i2c)
-    Radu - Eosif Mihailescu (https://github.com/csdexter/Si4735).
-
-=-- Eosif Mihailescu --=========================================================
-
-Arduino Si4735 (and family) Library
-
-Written by Ryan Owens for SparkFun Electronics on 5/17/2011
-Altered by Wagner Sartori Junior <wsartori@gmail.com> on 9/13/2011
-Actively being developed by Jon Carrier <jjcarrier@gmail.com>
-Refactoring, cosmetic changes and I2C mode by Radu - Eosif Mihailescu <radu.mihailescu@linux360.ro> 3/29/2012
-Painstaking hardware testing by Todd Scott Canaday <tcanaday@memphis.edu> 4/03/2012
-I2C bug fixes pointed out by Ray Dees 4/03/2012
-Bug spotting in begin() -> setMode() interaction by Albert Tejera 5/24/2012
-
-This library is intended for use with the SparkFun Si4735 Shield or Breakout
-Board, however it should work with most Si47xx chips that share the same command
-language. At the time of this writing, the list includes: Si4700->Si4713,
-Si4720, Si4721, Si4730, Si4731, Si4734->Si4749, Si4784 and Si4785.
-
-Originally released under the 'Buy Me a Beer' license (if we ever meet, you
-buy me a beer).
-
-To the furthest extent that this is legally possible, the fork maintained by
-Radu - Eosif Mihailescu and published here https://github.com/csdexter/Si4735
-is hereby released under the LGPL version 3.
-To the furthest extent that this is legally enforceable, the copyright remains
-with the authors listed above.
-
-See the example sketches to learn how to use the library in your code.
-
-HARDWARE NOTES:
- * The Si4735 is a 3.3V I/O chip whereas the Arduino Uno/Mega are 5V I/O. This
-   means you will need to use logic level shifters if you are trying to use
-   the Breakout Board version with the latter.
-   If you're using the Shield, you should be ok save for a few fatal design
-   mistakes SparkFun introduced. There are various hacks around to work around
-   those, my personal recommendation is that you go for a real level shifter.
-   Please note that BOB-08745 is cheaper than BOB-10403 mainly because it's a
-   lot slower. For casual applications speed shouldn't matter, but if you need
-   to push the SPI interface to its limit, go for the expensive version if you
-   need to translate between a 5V I/O Arduino and the Si4735.
- * If you're using the Breakout Board, make sure you tell the code whether or
-   not you connected a 32768Hz oscillator to the RCLK and DCLK pins. See the
-   schematic for the Shield for reference.
- * Quick connection reference:
-   SPI Mode, Si4735 -> Arduino:
-     SDIO      -> MOSI    (Arduino output)
-     GPO1      -> MISO    (Arduino input)
-     SCLK      -> SCK     (Arduino output)
-     #SEN      -> SS      (Arduino output)
-     #RESET    -> D9      (Arduino output)
-     GPO2/#INT -> D2/INT0 (Arduino bidirectional)
-   I2C Mode, Si4735 -> Arduino:
-     SDIO      -> SDA     (Arduino bidirectional)
-     SCLK      -> SCL     (Arduino output)
-     #SEN      -> tied high or low, tell the code which one with
-                  SI4735_PIN_SEN_HW*
-     #RESET    -> D9      (Arduino output)
-     GPO1      -> left floating
-     GPO2/#INT -> D2/INT0 (Arduino input)
-                  or (left floating or tied high, if not using interrupts)
-
-For general questions and updates on this library please contact the fork
-maintainer at <radu.mihailescu@linux360.ro>.
-
-=-- Rickey Wang --==============================================================
-
-See below for more details.
-
-This code is for the Si4737 breakout board made by Alex_K (http://forum.arduino.cc/index.php?topic=145187.msg1420076#msg1420076)
-of Arudino forums
-
-I could not get the Si4735 library to work with my board, so I figured I'd start
-from blank. Anything and everything concerning SPI has been removed. An example
-is available.
-
-=== Hardware Notes ===
- * Quick connection reference:
-   I2C Mode, Si4735 -> Arduino:
-     SDIO      -> SDA     (Arduino bidirectional)
-     SCLK      -> SCL     (Arduino output)
-     #RESET    -> D9      (Arduino output)
-
-	 I don't know what those are:
-	 #SEN      -> tied high or low, tell the code which one with
-                  SI4735_PIN_SEN_HW*
-     GPO1      -> left floating
-     GPO2/#INT -> D2/INT0 (Arduino input)
-                  or (left floating or tied high, if not using interrupts)
-
-
-
-=-- Sean McBeth --=============================================================
-
 Note that the VCXPROJ files in the examples directory are meant to be opened in
 Microsoft Visual Studio using the Visual Micro plugin (http://www.visualmicro.com/).
 However, the INO files should work with the standard Arduino IDE without any
@@ -105,9 +9,47 @@ manual (https://www.silabs.com/Support%20Documents/TechnicalDocs/AN332.pdf),
 and a more complete example that interfaces with some external hardware of a
 specific design.
 
+This was originally based on Rickey Wang's I2C library for the Si4737 (https://github.com/rickeywang/Si4737_i2c)
+but I couldn't get it to work and ended up writing my own complete library in
+the process of debugging.
 
-NOTE: if you're running on a 3.3v Arduino, you should double the baud rate at
-which you run the SoftSerial library, but do not double it in the Serial Monitor,
-because the lower voltage Arduino's only run at half the clock rate but doesn't
-know it, so the SoftSerial code assumes it's running at full speed, which screws
-up the timing.
+The sketch in the INO file expects some additions:
+
+- Install DSS Circuit's I2C Master library (http://dsscircuits.com/articles/86-articles/66-arduino-i2c-master-library)
+The Wire library that comes with Arduino for I2C communication is buggy and will
+lock up after a few hundred API calls. I've included the ZIP file for REV5 of
+the library in the repository for convenience.
+- Connect "V5" of the 3.3v Arduino to the SI chip's VDD (21) and VIO (20) pins
+as well as to a 20nF capacitor connected to the DBYP (22) pin.
+- Connect all SI chip's GND (13, 14), SEN (16), P10, P11, and RFGND (9) to the
+Arduino's ground.
+- Connect Arduino pins D4 - D7 to thumbwheel array's bit read pins, in
+reverse order. If you don't like to connect them in reverse, redefine DIGIT_BIT_PIN0
+through DIGIT_BIT_PIN3 in the INO file to suit.
+- Connect Arduino pins D8 - D11 to thumbweel array's digit select pins, also
+in reverse order. If you don't like to connect them in reverse, redefine
+DIGIT_SEL_PIN0 through DIGIT_SEL_PIN3 in the INO file to suit.
+- Connect Arduino pin D2 to SI chip's pin GPIO2/INT (4). This is the interrupt
+line that the SI chip uses to indicate it has completed a command.
+- Connect Arduino pin D3 to an LED to indicate signal strength as a function
+of RSSI (recieved signal strength indicator). The value gets rescaled according
+to different rules for FM vs WB. First RSSI gets squared, then multiplied by
+255. Finally:
+    - in FM mode, the highest value I ever saw was 35. So the squared
+    RSSI is divided by 35 squared = 625
+    - in WB mode, the highest value I ever saw was 9. So the squared
+    RSSI is divided by 9 squared = 81
+    - You can change either of these MAX_RSSI_(FM|WB) values in HAL.h
+- Connect Arduino pin D12 to an LED to indicate FM mode is active.
+- Connect Arduino pin D13 to an LED to indicate WB mode is active.
+- Connect Arduino pin A0 to SI chip's RESET pin. Control of the reset pin
+is necessary to power the chip correctly.
+- Connect the I2C bus:
+    - Arduino pin A4 to SI chip's SDIO pin (18)
+    - Arduion pin A5 to SI chip's SCLK pin (17)
+- Connect a 32.768 KHz crystal across SI chip's DCLK (3) and RCLK (19) pins
+- Connect 22 pF capacitors from both SI chip's DCLK pin and RCLK pin
+to ground.
+- Connect the antenna to the SI chip's FMI pin (8).
+- Connect the SI chip's LOUT pin (24) and ROUT pin (23) to the stereo audio
+amplifier.

@@ -15,11 +15,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Si4737_Example.ino" />
+    <None Include="BasicSi4737_I2CExample.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Si4737_Example.vsarduino.h">
+    <ClInclude Include="HAL.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="__vm\.Si4737_i2c.vsarduino.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="HAL.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
